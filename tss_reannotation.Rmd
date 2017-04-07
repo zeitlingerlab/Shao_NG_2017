@@ -1,0 +1,97 @@
+``` {r setup, echo=FALSE, message=FALSE, include=FALSE, error=FALSE}
+
+library(GenomicRanges)
+library(magrittr)
+library(rtracklayer)
+
+setwd("/data/analysis_code/")
+options(knitr.figure_dir = "tss_reannotation")
+
+source("shared_code/knitr_common.r")
+source("shared_code/granges_common.r")
+```
+
+# TSS re-annotation
+
+**Author:** [Wanqing Shao](mailto:was@stowers.org)
+
+**Generated:** `r format(Sys.time(), "%a %b %d %Y, %I:%M %p")`
+
+
+## Overview
+
+Re-annotate Dme TSS using PRO-cap data from Lis (Kwak et al, 2013)
+
+TSSs from flybase protein coding genes (fb-r5.47) were re-annotated to match a nearby PRO-cap (GSM1032759) peak summit if within 150 bp distance. Original TSS annotations from flybase were preserved if no PRO-cap peak was detected. If a TSS was found within 300 bp of another TSS, both TSSs were removed from the promoter set. This set of re-annotated TSSs (n= 14,229) was used for subsequent analyses.
+
+
+### Generate flybase_r5.57 mRNA transcripts granges object 
+
+```{r generate_tss_gr, echo=T}
+fb_5.57_mrna <- read.table("/data/public_data/flybase/flybase_r5.57_mrna.txt", header=F, sep = "\t")
+
+fb_5.57_mrna <- fb_5.57_mrna[, c(1, 3, 4,5,7, 9)]
+colnames(fb_5.57_mrna) <- c("chr", "type", "start", "end",  "strand", "info")
+fb_5.57_mrna <- subset(fb_5.57_mrna, strand %in% c("+", "-"))
+
+tx.gr <- with(fb_5.57_mrna, GRanges(ranges   = IRanges(start=start, end=end), 
+                                 strand   = as.character(strand), 
+                                 seqnames = paste0("chr", chr),
+                                 fb_t_id  = gsub(".*ID=", "", info) %>% gsub(";.*", "", .),
+                                 fb_g_id  = gsub(".*Parent=", "", info) %>% gsub(";.*", "", .),
+                                 gene  = gsub(".*Name=", "", info) %>% gsub("-R.*", "", .)))
+
+valid_chr <- c("chr2L", "chr2R", "chr3L", "chr3R", "chr4", "chrX" )
+seqlevels(tx.gr, force=T) <- valid_chr
+save(tx.gr, file="/data/analysis_code/rdata/dme_mrna.gr.RData")
+
+```
+
+### Re-align TSS to PRO-cap summits
+
+```{r tss_realignment, echo=T}
+
+procap_pos <- import("/data/public_data/lis_procap/GSM1032759_PROcap.pl.bedgraph.gz")
+procap_neg <- import("/data/public_data/lis_procap/GSM1032759_PROcap.mn.bedgraph.gz")
+
+
+tss_realignment <- function(strand, procap){
+  tx <- tx.gr[strand(tx.gr) == strand]
+  tx.r <- resize(tx, 1, "start") %>% resize(., 301, "center")
+  tx.r$new_start <- coverage(procap, weight=abs(procap$score)) %>% regionWhichMaxs(tx.r,.) 
+  tx.r$procap_sig <- coverage(procap, weight=abs(procap$score)) %>% regionSums(tx.r, .)
+  start(tx.r) <- ifelse(tx.r$procap_sig >= 20, tx.r$new_start, start(tx.r))
+  end(tx.r) <- start(tx.r)
+  tx.r
+}
+
+tss_pos <- tss_realignment("+", procap_pos)
+tss_neg <- tss_realignment("-", procap_neg)
+tss <- c(tss_pos, tss_neg)
+```
+
+### Filter out overlapping TSS
+
+```{r tss_filter, echo=T}
+
+tss_temp <- tss[order(tss$procap_sig, decreasing=T)] %>% 
+            .[!duplicated(paste(seqnames(.), start(.)))]
+
+strand(tss_temp) <- "*"
+tss_temp <- tss_temp[order(tss_temp)]
+
+all_dis <- c(start(tss_temp), Inf) - c(0, start(tss_temp))
+
+tss_temp$dis_before <- all_dis[1:length(tss_temp)]
+tss_temp$dis_after <- all_dis[2:length(all_dis)]
+
+tss_temp <-subset(tss_temp, dis_before > 300 & dis_after > 300) 
+tss_u <- tss[tss$fb_t_id %in% tss_temp$fb_t_id]
+
+save(tss_u, file="/data/analysis_code/rdata/dme_mrna_unique_tss.RData")
+```
+
+
+```{r echo=F}
+sessionInfo()
+```

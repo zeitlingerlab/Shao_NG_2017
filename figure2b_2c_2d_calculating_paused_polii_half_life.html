@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+
+<meta charset="utf-8">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="generator" content="pandoc" />
+
+
+
+
+<title></title>
+
+<script src="html_support/jquery-1.11.3/jquery.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="html_support/bootstrap-3.3.5/css/spacelab.min.css" rel="stylesheet" />
+<script src="html_support/bootstrap-3.3.5/js/bootstrap.min.js"></script>
+<script src="html_support/bootstrap-3.3.5/shim/html5shiv.min.js"></script>
+<script src="html_support/bootstrap-3.3.5/shim/respond.min.js"></script>
+<script src="html_support/navigation-1.1/tabsets.js"></script>
+<link href="html_support/highlightjs-1.1/textmate.css" rel="stylesheet" />
+<script src="html_support/highlightjs-1.1/highlight.js"></script>
+
+<style type="text/css">code{white-space: pre;}</style>
+<style type="text/css">
+  pre:not([class]) {
+    background-color: white;
+  }
+</style>
+<script type="text/javascript">
+if (window.hljs && document.readyState && document.readyState === "complete") {
+   window.setTimeout(function() {
+      hljs.initHighlighting();
+   }, 0);
+}
+</script>
+
+
+
+<style type="text/css">
+h1 {
+  font-size: 34px;
+}
+h1.title {
+  font-size: 38px;
+}
+h2 {
+  font-size: 30px;
+}
+h3 {
+  font-size: 24px;
+}
+h4 {
+  font-size: 18px;
+}
+h5 {
+  font-size: 16px;
+}
+h6 {
+  font-size: 12px;
+}
+.table th:not([align]) {
+  text-align: left;
+}
+</style>
+
+<link rel="stylesheet" href="html_support/custom.css" type="text/css" />
+
+</head>
+
+<body>
+
+<style type = "text/css">
+.main-container {
+  max-width: 940px;
+  margin-left: auto;
+  margin-right: auto;
+}
+code {
+  color: inherit;
+  background-color: rgba(0, 0, 0, 0.04);
+}
+img {
+  max-width:100%;
+  height: auto;
+}
+.tabbed-pane {
+  padding-top: 12px;
+}
+button.code-folding-btn:focus {
+  outline: none;
+}
+</style>
+
+
+
+<div class="container-fluid main-container">
+
+<!-- tabsets -->
+<script>
+$(document).ready(function () {
+  window.buildTabsets("TOC");
+});
+</script>
+
+<!-- code folding -->
+
+
+
+
+
+
+<div class="fluid-row" id="header">
+
+
+
+
+</div>
+
+<div id="TOC">
+<ul>
+<li><a href="#figure-2b-2c-and-2d-calculating-paused-pol-ii-half-life">Figure 2b 2c and 2d calculating paused Pol II half-life</a><ul>
+<li><a href="#overview">Overview</a><ul>
+<li><a href="#half-life-calculation">Half-life calculation</a></li>
+<li><a href="#plot-fitting-curve">Plot fitting curve</a></li>
+<li><a href="#pol-ii-heatmap">Pol II heatmap</a></li>
+</ul></li>
+</ul></li>
+</ul>
+</div>
+
+<div id="figure-2b-2c-and-2d-calculating-paused-pol-ii-half-life" class="section level1">
+<h1>Figure 2b 2c and 2d calculating paused Pol II half-life</h1>
+<p><strong>Author:</strong> <a href="mailto:was@stowers.org">Wanqing Shao</a></p>
+<p><strong>Generated:</strong> Fri Apr 07 2017, 05:58 PM</p>
+<div id="overview" class="section level2">
+<h2>Overview</h2>
+<p>Calculate the half-life of Paused Poll by fitting Pol II signal at pausing position along Triptolide treatment to exponential decay model.</p>
+<p>To analyze the half-lives of paused Pol II from these data, promoters were selected if</p>
+<pre><code>(1) the total Pol II signal in both control and Flavopiridol treated condition was high (top 25%)
+
+(2) the position of Pol II pausing was less than 80 bp downstream of the TSS and 
+
+(3) the Pol II pausing position could be unambiguously determined. </code></pre>
+<p>2329 promoters fulfilled these criteria.</p>
+<p>For each promoter, the Pol II signal was calculated in a 41 bp window centered on the pausing position (the midpoint between Pol II positive and negative summits). To calculate the half-life of paused Pol II at each promoter, the Pol II time course measurements were fitted into an exponential decay model using non-linear regression.</p>
+<p>1798 promoters have a paused Pol II half-life shorter than 60 min, and promoters with a paused Pol II half-life of longer than 60 min (n=531) were floored to 60 min to eliminate inflated values due to noise. The 2329 promoters were then ranked and divided into 5 quantiles.</p>
+<div id="half-life-calculation" class="section level3">
+<h3>Half-life calculation</h3>
+<p><img src="figure2b_2c_2d_calculating_paused_polii_half_life/half_life_calculation-1.png" width="672" /></p>
+</div>
+<div id="plot-fitting-curve" class="section level3">
+<h3>Plot fitting curve</h3>
+<p><img src="figure2b_2c_2d_calculating_paused_polii_half_life/fitting_curve-1.png" width="672" /></p>
+</div>
+<div id="pol-ii-heatmap" class="section level3">
+<h3>Pol II heatmap</h3>
+<p>For display purposes, the Pol II measurements at each promoter were normalized to the maximum Pol II signal under control condition.</p>
+<p><img src="figure2b_2c_2d_calculating_paused_polii_half_life/Pol_II_heatmap-1.png" width="672" /><img src="figure2b_2c_2d_calculating_paused_polii_half_life/Pol_II_heatmap-2.png" width="672" /><img src="figure2b_2c_2d_calculating_paused_polii_half_life/Pol_II_heatmap-3.png" width="672" /><img src="figure2b_2c_2d_calculating_paused_polii_half_life/Pol_II_heatmap-4.png" width="672" /><img src="figure2b_2c_2d_calculating_paused_polii_half_life/Pol_II_heatmap-5.png" width="672" /></p>
+<p><img src="figure2b_2c_2d_calculating_paused_polii_half_life/heatmap_lagend-1.png" width="336" /><img src="figure2b_2c_2d_calculating_paused_polii_half_life/heatmap_lagend-2.png" width="336" /></p>
+<pre><code>## R version 3.3.2 (2016-10-31)
+## Platform: x86_64-pc-linux-gnu (64-bit)
+## Running under: Ubuntu 16.04.2 LTS
+## 
+## locale:
+##  [1] LC_CTYPE=en_US.UTF-8       LC_NUMERIC=C              
+##  [3] LC_TIME=en_US.UTF-8        LC_COLLATE=en_US.UTF-8    
+##  [5] LC_MONETARY=en_US.UTF-8    LC_MESSAGES=en_US.UTF-8   
+##  [7] LC_PAPER=en_US.UTF-8       LC_NAME=C                 
+##  [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+## [11] LC_MEASUREMENT=en_US.UTF-8 LC_IDENTIFICATION=C       
+## 
+## attached base packages:
+## [1] stats4    parallel  stats     graphics  grDevices utils     datasets 
+## [8] methods   base     
+## 
+## other attached packages:
+##  [1] lattice_0.20-34      reshape2_1.4.2       rtracklayer_1.32.2  
+##  [4] digest_0.6.12        pander_0.6.0         reshape_0.8.6       
+##  [7] ggplot2_2.2.1        magrittr_1.5         GenomicRanges_1.24.3
+## [10] GenomeInfoDb_1.8.7   IRanges_2.6.1        S4Vectors_0.10.3    
+## [13] BiocGenerics_0.18.0 
+## 
+## loaded via a namespace (and not attached):
+##  [1] Rcpp_0.12.9                plyr_1.8.4                
+##  [3] XVector_0.12.1             bitops_1.0-6              
+##  [5] tools_3.3.2                zlibbioc_1.18.0           
+##  [7] evaluate_0.10              tibble_1.2                
+##  [9] gtable_0.2.0               yaml_2.1.14               
+## [11] stringr_1.2.0              knitr_1.15.1              
+## [13] Biostrings_2.40.2          rprojroot_1.2             
+## [15] grid_3.3.2                 Biobase_2.32.0            
+## [17] XML_3.98-1.5               BiocParallel_1.6.6        
+## [19] rmarkdown_1.3              backports_1.0.5           
+## [21] scales_0.4.1               Rsamtools_1.24.0          
+## [23] htmltools_0.3.5            GenomicAlignments_1.8.4   
+## [25] assertthat_0.1             SummarizedExperiment_1.2.3
+## [27] colorspace_1.3-2           labeling_0.3              
+## [29] stringi_1.1.2              RCurl_1.95-4.8            
+## [31] lazyeval_0.2.0             munsell_0.4.3</code></pre>
+</div>
+</div>
+</div>
+
+
+
+
+</div>
+
+<script>
+
+// add bootstrap table styles to pandoc tables
+function bootstrapStylePandocTables() {
+  $('tr.header').parent('thead').parent('table').addClass('table table-condensed');
+}
+$(document).ready(function () {
+  bootstrapStylePandocTables();
+});
+
+
+</script>
+
+
+</body>
+</html>

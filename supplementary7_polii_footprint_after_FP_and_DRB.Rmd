@@ -1,0 +1,92 @@
+``` {r setup, echo=FALSE, message=FALSE, include=FALSE, error=FALSE}
+library(GenomicRanges, warn.conflicts=F)
+library(magrittr)
+library(parallel)
+library(ggplot2)
+
+setwd("/data/analysis_code/")
+options(knitr.figure_dir = "supplementary7_polii_footprint_after_FP_and_DRB")
+source("shared_code/knitr_common.r")
+source("shared_code/granges_common.r")
+source("shared_code/metapeak_common.r")
+source("shared_code/sample_common.r")
+```
+
+# Supplementary Pol II footirnt after Flavopiridol and DRB treatment
+
+## Overview
+
+Plot Pol II footprint changes after TFlavopiridol and DRB treatment
+
+### Single gene example
+
+```{r single_gene}
+tss <- get(load("./rdata/dme_mrna_unique_tss.RData"))
+
+pino <- tss[tss$fb_t_id == "FBtr0077988"] 
+
+dmso_polii_pino <- get_exo_metapeak(pino, "dmso_polii", upstream=100, downstream=101)
+tri_polii_pino <- get_exo_metapeak(pino, "tri_polii", upstream=100, downstream=101)
+fp_polii_pino <- get_exo_metapeak(pino, "fp_0.5_polii", upstream=100, downstream=101)
+drb_polii_pino <- get_exo_metapeak(pino, "drb_50um_polii", upstream=100, downstream=101)
+
+plot_exo_single_gene <- function(metapeak, name, lim=NULL){
+    metapeak.p <- subset(metapeak, strand == "+")
+    metapeak.n <- subset(metapeak, strand == "-")
+    if(is.null(lim)){
+        x <- ggplot(metapeak.p, aes(x=tss_distance, y=reads)) + geom_bar(fill="#B23F49", stat="identity") + 
+                geom_bar(data=metapeak.n, aes(x=tss_distance, y=reads), fill="#045CA8", stat="identity") + 
+                ggtitle(name) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+        panel.background = element_blank(), axis.line.x = element_line(colour = "black"), axis.line.y = element_line(colour = "black")) + xlab("distance from TSS (bp)") + ylab("Reads per million")
+    }else{
+        x <- ggplot(metapeak.p, aes(x=tss_distance, y=reads)) + geom_bar(fill="#B23F49", stat="identity") + 
+                geom_bar(data=metapeak.n, aes(x=tss_distance, y=reads), fill="#045CA8", stat="identity") + 
+                ggtitle(name) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+        panel.background = element_blank(), axis.line.x = element_line(colour = "black"), axis.line.y = element_line(colour = "black")) + xlab("distance from TSS (bp)") + ylab("Reads per million") + ylim(-1*lim, lim)
+    }
+    
+    x
+}
+
+plot_exo_single_gene(dmso_polii_pino, "Pol II (Control)")
+plot_exo_single_gene(fp_polii_pino, "Pol II (FP)")
+plot_exo_single_gene(drb_polii_pino, "Pol II (DRB)")
+
+plot_exo_single_gene(tri_polii_pino, "Pol II (TRI)")
+```
+
+### Metapeak
+
+```{r metapeak}
+dmso_tfiib <- load_bigwig("dmso_tfiib")
+
+tss$tfiib <- nexus_regionSums(resize(tss, 201, "center"), dmso_tfiib)
+high_tss <- tss[order(tss$tfiib, decreasing =T)][1:1000]
+
+dmso_polii_metapeak <- get_exo_metapeak(high_tss, "dmso_polii", upstream=100, downstream=101, smooth=5, sample_name = "DMSO")
+fp_polii_metapeak <- get_exo_metapeak(high_tss, "fp_0.5_polii", upstream=100, downstream=101, smooth=5, sample_name = "FP")
+drb_polii_metapeak <- get_exo_metapeak(high_tss, "drb_50um_polii", upstream=100, downstream=101, smooth=5, sample_name = "DRB")
+
+
+plot_exo_metapeak <- function(metapeak, pos.col, neg.col, name){
+    ymax <- max(abs(metapeak$reads))
+    x <- ggplot(metapeak, aes(x=tss_distance, y=reads, fill=strand)) + 
+         geom_area(position="identity") + scale_fill_manual(values=c(pos.col, neg.col)) +
+         ggtitle(name) + 
+         theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+         panel.background = element_blank(), axis.line.x = element_line(colour = "black"),
+         axis.line.y = element_line(colour = "black")) + 
+         xlab("distance from TSS (bp)") + 
+         ylab("average RPM") + 
+         ylim(-1 * ymax, ymax)
+    x
+}
+
+plot_exo_metapeak(dmso_polii_metapeak, "#454269", "#655E92", "DMSO Pol II")
+plot_exo_metapeak(fp_polii_metapeak, "#454269", "#655E92", "FP 0.5 uM Pol II")
+plot_exo_metapeak(drb_polii_metapeak, "#454269", "#655E92", "DRB 50 uM Pol II")
+```
+
+```{r}
+sessionInfo()
+```

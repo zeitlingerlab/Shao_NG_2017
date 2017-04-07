@@ -1,0 +1,110 @@
+``` {r setup, echo=FALSE, message=FALSE, include=FALSE, error=FALSE}
+library(GenomicRanges, warn.conflicts=F)
+library(magrittr)
+library(parallel)
+library(ggplot2)
+
+
+setwd("/data/analysis_code/")
+
+options(knitr.figure_dir = "figure3c_3d_basal_factors_at_genes_with_different_half_life")
+source("shared_code/knitr_common.r")
+source("shared_code/granges_common.r")
+source("shared_code/metapeak_common.r")
+source("shared_code/sample_common.r")
+```
+
+# Figure 3c and 3d basal factors at genes with different paused Pol II half-life
+
+**Author:** [Wanqing Shao](mailto:was@stowers.org)
+
+**Generated:** `r format(Sys.time(), "%a %b %d %Y, %I:%M %p")`
+
+## Overview
+
+Plot the amount of basal factors at genes with different paused Pol II half-life
+
+### Box plot
+
+```{r boxplot}
+samples <- c("dmso_tfiib", "dmso_tfiif", "dmso_tbp")
+tss <- get(load("rdata/dme_mrna_unique_tss.RData")) 
+half_life_df <- get(load("rdata/half_life_df.RData"))
+half_life_tss <- tss[tss$fb_t_id %in% half_life_df$fb_t_id]
+
+btf_sig_list<- cache("btf_signal.rds", function(){
+   mclapply(samples, function(x){
+     sig_df <- load_bigwig(x) %>%
+               nexus_regionSums(resize(half_life_tss, 201, "center"), .)  %>%
+               data.frame(fb_t_id = half_life_tss$fb_t_id, sig = . )%>%
+               merge(half_life_df, .)
+     sig_df
+   }, mc.cores=5)
+})
+
+names(btf_sig_list) <- samples
+
+btf_boxplot <- function(sample){
+  sig_df <- btf_sig_list[[sample]]
+  pval <- wilcox.test(subset(sig_df, quantile == "q1")$sig, subset(sig_df, quantile == "q5")$sig)$p.value %>% 
+          format(., scientific=T, digit=2)
+  sample_name <- gsub("dmso_", "", sample)
+  box_plot <- ggplot(sig_df, aes(x=quantile, y=log(sig, base=2))) + 
+              geom_boxplot(fill=c("#F0949A", "#FAD790", "#B7C593", "#81B6A9", "#6C97CA")) +  
+              ggtitle(paste0(toupper(sample_name), " pval=", pval)) +
+              theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+                    panel.background = element_blank(), axis.line.x = element_line(colour = "black"), 
+                    axis.line.y = element_line(colour = "black"))+
+              xlab("Paused Pol II half-life") +
+              ylab(paste(toupper(sample_name), "RPM (log2)"))
+  box_plot
+}
+
+btf_boxplot("dmso_tfiib")
+btf_boxplot("dmso_tfiif")
+btf_boxplot("dmso_tbp")
+```
+
+### Metapeak
+
+```{r metapeak}
+
+btf_metapeak_list <- cache("metapeak_list.rds", function(){
+  q1_tss <- tss[tss$fb_t_id %in% subset(half_life_df, quantile == "q1")$fb_t_id]
+  q5_tss <- tss[tss$fb_t_id %in% subset(half_life_df, quantile == "q5")$fb_t_id]
+
+  metapeak <- mclapply(samples, function(x){
+                q1_metapeak <- get_exo_metapeak(q1_tss, x, upstream=100, downstream=101, sample_name = "q1", smooth=5)
+                q5_metapeak <- get_exo_metapeak(q5_tss, x, upstream=100, downstream=101, sample_name = "q5", smooth=5)
+                metapeak <- rbind(q1_metapeak, q5_metapeak)
+                metapeak
+  }, mc.cores=5)
+  metapeak
+})
+
+names(btf_metapeak_list) <- samples
+
+btf_metapeak_plot <- function(sample){
+  metapeak <- btf_metapeak_list[[sample]]
+
+  sample_name <- gsub("dmso_", "", sample)
+  
+  x <- ggplot(metapeak, aes(x=tss_distance, y=reads, fill=sample)) + geom_area(position="identity")  + 
+       scale_fill_manual(values=c( "#F9C4C1", "#F49F9F",  "#82B8D9","#5C87BB"))+
+       ggtitle(toupper(sample_name)) + 
+       theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+             panel.background = element_blank(), axis.line.x = element_line(colour = "black"), 
+             axis.line.y = element_line(colour = "black")) + 
+       xlab("distance from TSS (bp)") + ylab("average RPM")
+  x
+    
+}
+
+btf_metapeak_plot("dmso_tfiib")
+btf_metapeak_plot("dmso_tfiif")
+btf_metapeak_plot("dmso_tbp")
+```
+
+```{r}
+sessionInfo()
+```

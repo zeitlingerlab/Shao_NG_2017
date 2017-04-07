@@ -1,0 +1,100 @@
+``` {r setup, echo=FALSE, message=FALSE, include=FALSE, error=FALSE}
+library(GenomicRanges, warn.conflicts=F)
+library(magrittr)
+library(parallel)
+library(ggplot2)
+
+setwd("/data/analysis_code/")
+options(knitr.figure_dir = "supplementary1_compare_replicates")
+source("shared_code/knitr_common.r")
+source("shared_code/granges_common.r")
+source("shared_code/metapeak_common.r")
+source("shared_code/sample_common.r")
+```
+
+# Supplementary compare replicates
+
+**Author:** [Wanqing Shao](mailto:was@stowers.org)
+
+**Generated:** `r format(Sys.time(), "%a %b %d %Y, %I:%M %p")`
+
+### scatter plot 
+
+Scatter plot showing the consistency between replicates,  Pol II and TFIIA at control condition are used as example
+
+```{r scatter_plot}
+
+tss<- get(load("./rdata/dme_mrna_unique_tss.RData")) 
+tss.ex <- resize(tss, 201, "center")
+samples <- c("dmso_polii", "dmso_tfiia")
+
+plot_correlation <- function(sample, gr){
+  
+  bigwig1 <- list(pos=paste0("/data/bigwig/kc167_", sample, "_chipnexus_1_normalized_positive.bw"),
+                 neg=paste0("/data/bigwig/kc167_", sample, "_chipnexus_1_normalized_negative.bw"))
+  bigwig2 <- list(pos=paste0("/data/bigwig/kc167_", sample, "_chipnexus_2_normalized_positive.bw"),
+                 neg=paste0("/data/bigwig/kc167_", sample, "_chipnexus_2_normalized_negative.bw"))
+  
+  sig1 <- nexus_regionSums(gr, bigwig1)
+  sig2 <- nexus_regionSums(gr, bigwig2)
+  
+  sig_df <- data.frame(sig1=log(sig1, base=2), sig2=log(sig2, base=2))
+  
+  r.squared <- summary(lm(sig1 ~sig2))$r.square %>% round(., digit=3)
+  x <- ggplot(sig_df, aes(x=sig1, y=sig2)) + geom_point() + 
+       ggtitle(paste(sample, "r2=", r.squared)) + xlab("Signal of replicate 1 (log2)")+ ylab("Signal of replicate 2 (log2)")+
+       theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+             panel.background = element_blank(), axis.line.x = element_line(colour = "black"), 
+             axis.line.y = element_line(colour = "black"))
+  print(x)
+}
+
+nothing <- lapply(samples, function(x)plot_correlation(x, tss.ex))
+```
+
+### plot single gene example
+
+Plot Pol II and TFIIA signal at gene pino
+
+```{r single_gene}
+pino <- tss[tss$fb_t_id == "FBtr0077988"]
+
+plot_exo_single_gene <- function(metapeak, name, lim=NULL){
+    metapeak.p <- subset(metapeak, strand == "+")
+    metapeak.n <- subset(metapeak, strand == "-")
+    if(is.null(lim)){
+        x <- ggplot(metapeak.p, aes(x=tss_distance, y=reads)) + geom_bar(fill="#B23F49", stat="identity") + 
+                geom_bar(data=metapeak.n, aes(x=tss_distance, y=reads), fill="#045CA8", stat="identity") + 
+                ggtitle(name) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+        panel.background = element_blank(), axis.line.x = element_line(colour = "black"), axis.line.y = element_line(colour = "black")) + xlab("distance from TSS (bp)") + ylab("Reads per million")
+    }else{
+        x <- ggplot(metapeak.p, aes(x=tss_distance, y=reads)) + geom_bar(fill="#B23F49", stat="identity") + 
+                geom_bar(data=metapeak.n, aes(x=tss_distance, y=reads), fill="#045CA8", stat="identity") + 
+                ggtitle(name) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+        panel.background = element_blank(), axis.line.x = element_line(colour = "black"), axis.line.y = element_line(colour = "black")) + xlab("distance from TSS (bp)") + ylab("Reads per million") + ylim(-1*lim, lim)
+    }
+    
+    x
+}
+
+chipnexus_example <-function(sample, gr){
+  bigwig1 <- list(pos=paste0("/data/bigwig/kc167_", sample, "_chipnexus_1_normalized_positive.bw"),
+                 neg=paste0("/data/bigwig/kc167_", sample, "_chipnexus_1_normalized_negative.bw"))
+  bigwig2 <- list(pos=paste0("/data/bigwig/kc167_", sample, "_chipnexus_2_normalized_positive.bw"),
+                 neg=paste0("/data/bigwig/kc167_", sample, "_chipnexus_2_normalized_negative.bw"))
+  metapeak1 <- exo_metapeak(gr, bigwig1, upstream=100, downstream=101)
+  metapeak2 <- exo_metapeak(gr, bigwig2, upstream=100, downstream=101)
+  lim <- max(abs(c(metapeak1$reads, metapeak2$reads)))
+  x <- plot_exo_single_gene(metapeak1, paste(sample, "rep1"), lim)
+  y <- plot_exo_single_gene(metapeak2, paste(sample, "rep2"), lim)
+  
+  print(x)
+  print(y)
+}
+nothing <-  lapply(samples, function(x)chipnexus_example(x, pino))
+```
+
+```{r}
+sessionInfo()
+```
+

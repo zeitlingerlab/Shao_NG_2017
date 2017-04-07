@@ -1,0 +1,94 @@
+``` {r setup, echo=FALSE, message=FALSE, include=FALSE, error=FALSE}
+library(GenomicRanges, warn.conflicts=F)
+library(magrittr)
+library(parallel)
+library(ggplot2)
+
+setwd("/data/analysis_code/")
+
+options(knitr.figure_dir = "figure3a_3b_initiating_polii")
+source("shared_code/knitr_common.r")
+source("shared_code/granges_common.r")
+source("shared_code/metapeak_common.r")
+source("shared_code/sample_common.r")
+```
+
+# Figure 3a and 3b Percentage of initiating Pol II 
+
+**Author:** [Wanqing Shao](mailto:was@stowers.org)
+
+**Generated:** `r format(Sys.time(), "%a %b %d %Y, %I:%M %p")`
+
+## Overview
+
+Plot the amount of initiating Pol II at genes with different paused Pol II half-life
+
+### Box plot
+
+```{r box_plot}
+tss <- get(load("rdata/dme_mrna_unique_tss.RData"))
+half_life_df <- get(load("rdata/half_life_df.RData"))
+dmso_polii <- load_bigwig("dmso_control_polii_spikein",sample_format = "data")
+
+  
+half_life_tss <- tss[tss$fb_t_id %in% half_life_df$fb_t_id]
+
+total_polii <- resize(half_life_tss, 201, "center") %>% 
+               nexus_regionSums(., dmso_polii)  %>%
+               data.frame(fb_t_id =half_life_tss$fb_t_id , total_polii = .)
+
+initiating_polii <- resize(half_life_tss, 41, "end") %>%
+                    nexus_regionSums(., dmso_polii) %>%
+                    data.frame(fb_t_id = half_life_tss$fb_t_id, initiating_polii = .)
+
+polii_df <- merge(half_life_df, total_polii) %>% merge(., initiating_polii)
+polii_df$ratio <-polii_df$initiating_polii / polii_df$total_polii
+  
+initiating_pval <- wilcox.test(subset(polii_df, quantile == "q1")$ratio, subset(polii_df, quantile == "q5")$ratio)$p.value %>% 
+                   format(., scientific=T, digit=2) 
+
+polii_boxplot <- ggplot(polii_df , aes(x=quantile, y=ratio )) +                     
+                 geom_boxplot(fill=c("#F0949A", "#FAD790", "#B7C593", "#81B6A9", "#6C97CA")) +  
+                 ggtitle(paste0("Percentage of initiating Pol II pval=", initiating_pval))+
+                 theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+                       panel.background = element_blank(), axis.line.x = element_line(colour = "black"), 
+                       axis.line.y = element_line(colour = "black"))+
+                 xlab("Paused Pol II half-life") +
+                 ylab("Initiating Pol II (%)") + 
+                 scale_y_continuous( limits = c(0, 0.5), labels = c(0, 10, 20, 30, 40, 50))
+  
+polii_boxplot  
+```
+
+### Metapeak
+
+```{r metapeak}
+q1_tss <-tss[tss$fb_t_id %in% subset(half_life_df, quantile == "q1")$fb_t_id]
+q5_tss <-tss[tss$fb_t_id %in% subset(half_life_df, quantile == "q5")$fb_t_id]
+
+
+q1_metapeak <- get_exo_metapeak(q1_tss, dmso_polii, upstream = 100, downstream=101, smooth=3, sample_format = "data", sample_name = "q1")
+q5_metapeak <- get_exo_metapeak(q5_tss, dmso_polii, upstream = 100, downstream=101, smooth=3, sample_format = "data", sample_name = "q5")
+
+plot_exo_metapeak <- function(metapeak, pos.col, neg.col, name){
+    ymax <- max(abs(metapeak$reads))
+    x <- ggplot(metapeak, aes(x=tss_distance, y=reads, fill=strand)) + 
+         geom_area(position="identity") + scale_fill_manual(values=c(pos.col, neg.col)) +
+         ggtitle(name) + 
+         theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+         panel.background = element_blank(), axis.line.x = element_line(colour = "black"),
+         axis.line.y = element_line(colour = "black")) + 
+         xlab("distance from TSS (bp)") + 
+         ylab("average RPM") + 
+         ylim(-1 * ymax, ymax)
+    x
+}
+
+
+plot_exo_metapeak(q1_metapeak, "#F39E9E", "#F7C3BF", "Pol II at q1")
+plot_exo_metapeak(q5_metapeak, "#5C85B7", "#81B5D5", "Pol II at q5")
+```
+
+```{r}
+sessionInfo()
+```

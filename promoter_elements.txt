@@ -1,0 +1,11 @@
+name	motif	window_start	window_end	directional
+DPE	KCGGTTSK	20	50	yes
+DRE	WATCGATW	-100	0	yes
+Inr	TCAKTY	-10	10	yes
+MTE	CSARCSSA	20	50	yes
+PB	KCGRWCG	20	50	yes
+TATA	STATAWAWR	-40	-20	yes
+Motif1	YGGTCACACTR	-100	50	yes
+Motif6	YRGTATWTTY	-150	25	yes
+Motif7	CAKCNCTR	-100	50	yes
+TCT	YYCTTTYY	-10	10	yes

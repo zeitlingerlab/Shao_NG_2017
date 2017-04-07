@@ -1,0 +1,112 @@
+``` {r setup, echo=FALSE, message=FALSE, include=FALSE, error=FALSE}
+library(GenomicRanges, warn.conflicts=F)
+library(magrittr)
+library(parallel)
+library(ggplot2)
+
+setwd("/data/analysis_code/")
+options(knitr.figure_dir = "supplementary5_tfiib")
+source("shared_code/knitr_common.r")
+source("shared_code/granges_common.r")
+source("shared_code/metapeak_common.r")
+source("shared_code/sample_common.r")
+```
+
+# Supplementary TFIIB footrpint before and after Triptolide treatment
+
+**Author:** [Wanqing Shao](mailto:was@stowers.org)
+
+**Generated:** `r format(Sys.time(), "%a %b %d %Y, %I:%M %p")`
+
+## Overview
+
+Plot TFIIB footprint changes after Triptolide treatment
+
+### Single gene example
+
+```{r single_gene}
+tss <- get(load("rdata/dme_mrna_unique_tss.RData"))
+
+rps20 <- tss[tss$fb_t_id == "FBtr0083964"]
+
+dmso_tfiib_rps20 <- get_exo_metapeak(rps20, "dmso_tfiib", upstream = 100, downstream=101)
+tri_tfiib_rps20 <- get_exo_metapeak(rps20, "tri_tfiib", upstream = 100, downstream=101)
+
+plot_exo_single_gene <- function(metapeak, name, lim=NULL){
+    metapeak.p <- subset(metapeak, strand == "+")
+    metapeak.n <- subset(metapeak, strand == "-")
+    if(is.null(lim)){
+        x <- ggplot(metapeak.p, aes(x=tss_distance, y=reads)) + geom_bar(fill="#B23F49", stat="identity") + 
+                geom_bar(data=metapeak.n, aes(x=tss_distance, y=reads), fill="#045CA8", stat="identity") + 
+                ggtitle(name) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+        panel.background = element_blank(), axis.line.x = element_line(colour = "black"), axis.line.y = element_line(colour = "black")) + xlab("distance from TSS (bp)") + ylab("Reads per million")
+    }else{
+        x <- ggplot(metapeak.p, aes(x=tss_distance, y=reads)) + geom_bar(fill="#B23F49", stat="identity") + 
+                geom_bar(data=metapeak.n, aes(x=tss_distance, y=reads), fill="#045CA8", stat="identity") + 
+                ggtitle(name) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+        panel.background = element_blank(), axis.line.x = element_line(colour = "black"), axis.line.y = element_line(colour = "black")) + xlab("distance from TSS (bp)") + ylab("Reads per million") + ylim(-1*lim, lim)
+    }
+    
+    x
+}
+
+plot_exo_single_gene(dmso_tfiib_rps20, "TFIIB (Control)", abs(max(dmso_tfiib_rps20$reads)))
+plot_exo_single_gene(tri_tfiib_rps20, "TFIIB (TRI)", abs(max(tri_tfiib_rps20$reads)))
+```
+
+### Metapeak
+
+```{r}
+dmso_tfiib <- load_bigwig("dmso_tfiib")
+tri_tfiib <- load_bigwig("tri_tfiib")
+
+tss$tfiib <- nexus_regionSums(resize(tss, 201, "center"), dmso_tfiib)
+high_tss <- tss[order(tss$tfiib, decreasing =T)][1:1000]
+
+dmso_tfiib_metapeak <- get_exo_metapeak(high_tss, "dmso_tfiib", upstream=100, downstream=101, smooth=3)
+tri_tfiib_metapeak <- get_exo_metapeak(high_tss, "tri_tfiib", upstream=100, downstream=101, smooth=3)
+
+plot_exo_metapeak <- function(metapeak, pos.col, neg.col, name){
+    ymax <- max(abs(metapeak$reads))
+    x <- ggplot(metapeak, aes(x=tss_distance, y=reads, fill=strand)) + 
+         geom_area(position="identity") + scale_fill_manual(values=c(pos.col, neg.col)) +
+         ggtitle(name) + 
+         theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+         panel.background = element_blank(), axis.line.x = element_line(colour = "black"),
+         axis.line.y = element_line(colour = "black")) + 
+         xlab("distance from TSS (bp)") + 
+         ylab("average RPM") + 
+         ylim(-1 * ymax, ymax)
+    x
+}
+
+plot_exo_metapeak(dmso_tfiib_metapeak, "#00A982", "#81CD91", "DMSO TFIIB")
+plot_exo_metapeak(tri_tfiib_metapeak, "#00A982", "#81CD91", "TRI TFIIB")
+```
+
+### Distribution of distance between TFIIB pos-summit and neg-summit
+
+```{r peak_distance}
+dmso_dis_df <- data.frame(sample="dmso", dis= regionWhichMins(resize(high_tss, 201, "center"), dmso_tfiib$neg) -
+                          regionWhichMaxs(resize(high_tss, 201, "center"), dmso_tfiib$pos))
+
+tri_dis_df <- data.frame(sample="tri", dis= regionWhichMins(resize(high_tss, 201, "center"), tri_tfiib$neg) - 
+                         regionWhichMaxs(resize(high_tss, 201, "center"), tri_tfiib$pos))
+
+dis_df <- rbind(dmso_dis_df, tri_dis_df)
+
+tfiib_dis_plot <- ggplot(dis_df, aes(x=dis, y=..count.., fill=sample)) + 
+                  geom_density(alpha=0.7) + xlim(-10, 80) + 
+                  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+                        panel.background = element_blank(), axis.line.x = element_line(colour = "black"), 
+                        axis.line.y = element_line(colour = "black")) + 
+                  scale_fill_manual(values=c("grey", "#FBD395"))+
+                  ggtitle("distribution of distance between TFIIB pos and neg strand summits")+
+                  xlab("Distance between pos and neg summit (bp)")
+
+tfiib_dis_plot
+```
+
+```{r}
+sessionInfo()
+```

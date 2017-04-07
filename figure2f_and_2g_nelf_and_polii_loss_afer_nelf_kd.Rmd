@@ -1,0 +1,95 @@
+``` {r setup, echo=FALSE, message=FALSE, include=FALSE, error=FALSE}
+library(GenomicRanges, warn.conflicts=F)
+library(magrittr)
+library(parallel)
+library(ggplot2)
+
+setwd("/data/analysis_code/")
+options(knitr.figure_dir = "figure2f_and_2g_nelf_and_polii_loss_afer_nelf_kd")
+source("shared_code/knitr_common.r")
+source("shared_code/granges_common.r")
+source("shared_code/metapeak_common.r")
+source("shared_code/sample_common.r")
+source("shared_code/heatmap_common.r")
+```
+
+# Figure 2f and 2g NELF-E level and the loss of Pol II after NELF depletion
+
+**Author:** [Wanqing Shao](mailto:was@stowers.org)
+
+**Generated:** `r format(Sys.time(), "%a %b %d %Y, %I:%M %p")`
+
+## Overview 
+
+Check NELF-E level and the loss of Pol II after NELF depletion at genes with different paused Pol II half-life.  
+
+### NELF-E level
+
+```{r nelf}
+tss <- get(load("./rdata/dme_mrna_unique_tss.RData"))
+half_life_df <- get(load("./rdata/half_life_df.RData"))
+high_tss <- tss[tss$fb_t_id %in% half_life_df$fb_t_id]
+
+q1q5_plot <- function(metapeak, title){
+  x <- ggplot(metapeak, aes(x=tss_distance, y=reads, fill=sample)) + geom_area(position="identity", alpha=0.8)  + 
+       scale_fill_manual(values=c( "#F9C4C1", "#F49F9F",  "#82B8D9","#5C87BB"))+
+       ggtitle(title) + 
+       theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+             panel.background = element_blank(), axis.line.x = element_line(colour = "black"), 
+             axis.line.y = element_line(colour = "black")) + 
+       xlab("distance from TSS (bp)") + ylab("average RPM")
+  x
+}
+
+q1_tss <- tss[tss$fb_t_id %in% subset(half_life_df, quantile == "q1")$fb_t_id]
+q5_tss <- tss[tss$fb_t_id %in% subset(half_life_df, quantile == "q5")$fb_t_id]
+
+q1_metapeak_dmso <- get_exo_metapeak(q1_tss, "dmso_nelfe", upstream=100, downstream=101, sample_name = "q1", smooth=5)
+q5_metapeak_dmso <- get_exo_metapeak(q5_tss, "dmso_nelfe", upstream=100, downstream=101, sample_name = "q5", smooth=5)
+
+nelf_metapeak_dmso <- rbind(q1_metapeak_dmso, q5_metapeak_dmso)
+q1q5_plot(nelf_metapeak_dmso, "NelfE at q1 and q5")
+
+q1_metapeak_tri <- get_exo_metapeak(q1_tss, "tri_nelfe", upstream=100, downstream=101, sample_name = "q1", smooth=5)
+q5_metapeak_tri <- get_exo_metapeak(q5_tss, "tri_nelfe", upstream=100, downstream=101, sample_name = "q5", smooth=5)
+
+nelf_metapeak_tri <- rbind(q1_metapeak_tri, q5_metapeak_tri)
+q1q5_plot(nelf_metapeak_tri, "NelfE after TRI at q1 and q5")
+```
+
+### The loss of Pol II after NELF depletion
+
+```{r decreased_polii}
+control_rpb3 <- load_bigwig("egfp_rnai")
+nelf_knockdown_rpb3 <- load_bigwig("nelfe_b_rnai")
+
+control_metapeak <- exo_metapeak(high_tss, control_rpb3, upstream=100,downstream=101, sample_name = "eGFP knockdown", smooth=5)
+knockdown_metapeak <- exo_metapeak(high_tss, nelf_knockdown_rpb3, upstream=100,downstream=101, sample_name = "NelfE+B knockdown", smooth=5)
+
+metpaeak <- rbind(control_metapeak, knockdown_metapeak)
+q1q5_plot(metpaeak, "Pol II profile after knockdown")
+
+sig_df <- data.frame(fb_t_id = high_tss$fb_t_id, 
+                     gfp = nexus_regionSums(resize(high_tss, 201, "center"), control_rpb3),
+                     nelf = nexus_regionSums(resize(high_tss,  201, "center"), nelf_knockdown_rpb3))
+
+sig_df <- merge(half_life_df, sig_df)
+sig_df$change <- log(sig_df$nelf / sig_df$gfp)
+sig_df <- subset(sig_df, is.finite(change) & !is.na(change))
+
+pval <- wilcox.test(subset(sig_df, quantile == "q1")$change, subset(sig_df, quantile == "q5")$change)$p.value %>% 
+          format(., scientific=T, digit=2)
+box_plot <- ggplot(sig_df, aes(x=quantile, y=change)) + 
+              geom_boxplot(fill=c("#F0949A", "#FAD790", "#B7C593", "#81B6A9", "#6C97CA")) +  
+              ggtitle(paste0("changes of Pol II pval=", pval)) +
+              theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+                    panel.background = element_blank(), axis.line.x = element_line(colour = "black"), 
+                    axis.line.y = element_line(colour = "black"))+
+              xlab("Paused Pol II half-life") +
+              ylab("change (log2)")
+box_plot
+```
+
+```{r}
+sessionInfo()
+```

@@ -1,0 +1,264 @@
+``` {r setup, echo=FALSE, message=FALSE, include=FALSE, error=FALSE}
+library(GenomicRanges, warn.conflicts=F)
+library(magrittr)
+library(parallel)
+library(ggplot2)
+library(reshape)
+
+setwd("/data/analysis_code/")
+options(knitr.figure_dir = "figure2b_2c_2d_calculating_paused_polii_half_life")
+source("shared_code/knitr_common.r")
+source("shared_code/granges_common.r")
+source("shared_code/metapeak_common.r")
+source("shared_code/sample_common.r")
+source("shared_code/heatmap_common.r")
+```
+
+# Figure 2b 2c and 2d calculating paused Pol II half-life
+
+**Author:** [Wanqing Shao](mailto:was@stowers.org)
+
+**Generated:** `r format(Sys.time(), "%a %b %d %Y, %I:%M %p")`
+
+## Overview 
+
+Calculate the half-life of Paused Poll by fitting Pol II signal at pausing position along Triptolide treatment to exponential decay model. 
+
+To analyze the half-lives of paused Pol II from these data, promoters were selected if 
+
+    (1) the total Pol II signal in both control and Flavopiridol treated condition was high (top 25%)
+
+    (2) the position of Pol II pausing was less than 80 bp downstream of the TSS and 
+
+    (3) the Pol II pausing position could be unambiguously determined. 
+    
+  
+2329 promoters fulfilled these criteria. 
+
+For each promoter, the Pol II signal was calculated in a 41 bp window centered on the pausing position (the midpoint between Pol II positive and negative summits). To calculate the half-life of paused Pol II at each promoter, the Pol II time course measurements were fitted into an exponential decay model using non-linear regression. 
+
+1798 promoters have a paused Pol II half-life shorter than 60 min, and promoters with a paused Pol II half-life of longer than 60 min (n=531) were floored to 60 min to eliminate inflated values due to noise. The 2329 promoters were then ranked and divided into 5 quantiles. 
+
+### Half-life calculation
+
+```{r half_life_calculation}
+tss <- get(load("rdata/dme_mrna_unique_tss.RData"))
+fp_polii <- load_bigwig("fp_polii")
+dmso_polii <- load_bigwig("dmso_control_polii_spikein",sample_format = "data")
+
+
+polii_mid <- resize(tss, 201, "center") %>% align_and_score_chipnexus_peaks(., fp_polii, "center")
+polii_mid <- polii_mid[order(polii_mid)]
+tss <- tss[order(tss)]
+
+polii_mid$dis <- (start(polii_mid) - start(tss)) * ifelse(strand(polii_mid) == "+", 1, -1)
+
+polii_mid$p_summit <- resize(polii_mid, 201, "center") %>% regionWhichMaxs(., fp_polii$pos)
+polii_mid$n_summit <- resize(polii_mid, 201, "center") %>% regionWhichMins(., fp_polii$neg)
+
+
+polii_mid$dmso_sig <-  nexus_regionSums(resize(polii_mid, 201, "center"), dmso_polii)
+polii_mid$fp_sig <- nexus_regionSums(resize(polii_mid, 201, "center"), fp_polii)
+  
+polii_mid <- polii_mid[polii_mid$fp_sig >= quantile(polii_mid$fp_sig, 0.75) & 
+             polii_mid$dmso_sig >= quantile(polii_mid$dmso_sig, 0.75) &
+             (polii_mid$n_summit - polii_mid$p_summit) > 0 &
+             (polii_mid$n_summit - polii_mid$p_summit) < 80 &
+             polii_mid$dis < 80 & polii_mid$dis > 0]
+
+pausing_window <- resize(polii_mid, 41, "center")
+
+sample_names <- c("dmso_control_polii_spikein","tri_5min_polii_spikein","tri_10min_polii_spikein", "tri_20min_polii_spikein", "tri_30min_polii_spikein")
+
+calculate_polii_signal <- function(sample, gr){
+  sample_path1 <- load_bigwig(sample, sample_format="separate")[[1]]
+  sample_path2 <- load_bigwig(sample, sample_format="separate")[[2]]
+  sig1 <- nexus_regionSums(gr, sample_path1)
+  sig2 <- nexus_regionSums(gr, sample_path2)
+  df <- data.frame(fb_t_id = gr$fb_t_id, sig1 = sig1, sig2 = sig2)
+  colnames(df)[2:3] <- paste0(sample, c("_rep1", "_rep2"))
+  df
+}
+
+polii_sig_list <- cache("polii_sig_list.rds", function(){
+  mclapply(sample_names, function(x)calculate_polii_signal(x, pausing_window), mc.cores=5)
+})
+
+polii_sig_df <- merge_recurse(polii_sig_list)
+
+
+calc_half_life <- function(df){
+  rep1_df <- df[, grep("rep1", colnames(df), value = T)]
+  rep2_df <- df[, grep("rep2", colnames(df), value = T)]
+  
+  rep1_df <- rep1_df / rep1_df[,1]
+  rep2_df<- rep2_df / rep2_df[,1]
+  
+    results <-data.frame()
+    for(i in 1:nrow(df)){
+        message("dealing with #",i)
+        try_df <- data.frame(time = rep(c(0, 5, 10, 20, 30), times=2), 
+                            Rt_Rc = c(as.numeric(as.vector(rep1_df[i,])),as.numeric(as.vector(rep2_df[i,]))), 
+                            rep=rep(c("1","2"), each=5))
+        try_df <- try_df[is.finite(try_df$Rt_Rc),]
+        tryCatch({
+           model <- nls(Rt_Rc ~ exp(-b * time), data = try_df, start = list(b = 0))
+           residuals <- as.numeric(summary(model)$residuals)
+           rm.sample <- which(abs(residuals) >= as.numeric(quantile(abs(residuals), 0.999)))
+           if(length(rm.sample) == 0 | 1 %in% rm.sample | 6 %in% rm.sample){
+               try_df <- try_df
+           }else{
+            try_df <- try_df[-1 *(rm.sample), ]
+           }
+           model <-nls(Rt_Rc ~ exp(-b * time), data = try_df, start = list( b = 0))
+           slope <- coef(model)[[1]]
+           half_life <- log(2)/slope
+           rse <- summary(model)$sigma
+           result_df<- data.frame(fb_t_id = df[ i, "fb_t_id"], half_life =half_life, rse=rse)        
+           results <- rbind(results, result_df)
+        }, error=function(e){
+          result_df <- data.frame()
+        })
+
+    }
+    results
+}
+
+half_life_df <- cache("polii_half_life.rds", function(){
+  calc_half_life(polii_sig_df)
+})
+
+valid_half_life <-subset(half_life_df, half_life >0 & half_life < 60)
+valid_half_life$rank <- rank(valid_half_life$half_life)
+
+stably_paused <- subset(half_life_df, !fb_t_id %in% valid_half_life$fb_t_id)
+stably_paused.p <- subset(stably_paused, half_life > 0) %>% .[order(.$half_life),]
+stably_paused.n <- subset(stably_paused, half_life < 0) %>% .[order(.$half_life, decreasing=T),]
+stably_paused <- rbind(stably_paused.p, stably_paused.n)
+stably_paused$rank <- (max(valid_half_life$rank) +1) :(max(valid_half_life$rank) + nrow(stably_paused))
+
+hist(valid_half_life$half_life, breaks=100, xlab="half-life", main=paste("half-life n=", nrow(valid_half_life)))
+
+half_life_df <- rbind(valid_half_life, stably_paused)
+half_life_df <-data.frame(fb_t_id=tss$fb_t_id, fb_g_id=tss$fb_g_id, gene=tss$gene) %>% merge(., half_life_df) %>% .[order(.$rank), ]
+
+
+half_life_df$quantile <- ifelse(half_life_df$rank <= as.numeric(quantile(half_life_df$rank, 0.2)), "q1", "q2")
+half_life_df$quantile[half_life_df$rank > as.numeric(quantile(half_life_df$rank, 0.4)) & half_life_df$rank <= as.numeric(quantile(half_life_df$rank, 0.6))] <- "q3"
+half_life_df$quantile[half_life_df$rank > as.numeric(quantile(half_life_df$rank, 0.6)) & half_life_df$rank <= as.numeric(quantile(half_life_df$rank, 0.8))] <- "q4"
+half_life_df$quantile[half_life_df$rank > as.numeric(quantile(half_life_df$rank, 0.8))] <- "q5"
+save(half_life_df, file="rdata/half_life_df.RData")
+```
+
+### Plot fitting curve
+
+```{r fitting_curve}
+plot_fitting <- function(fb_t_id){ 
+  
+  df <-polii_sig_df[polii_sig_df$fb_t_id == fb_t_id,]
+  
+  rep1_df <- df[, grep("rep1", colnames(df), value = T)]
+  rep2_df <- df[, grep("rep2", colnames(df), value = T)]
+  
+  rep1_df <- rep1_df / rep1_df[,1]
+  rep2_df<- rep2_df / rep2_df[,1]
+  
+  try_df <- data.frame(time = rep(c(0, 5, 10, 20, 30), times=2), 
+                       Rt_Rc = c(as.numeric(as.vector(rep1_df)),as.numeric(as.vector(rep2_df))), 
+                       rep=rep(c("1","2"), each=5))
+  
+  try_df <- try_df[is.finite(try_df$Rt_Rc),]
+  model <- nls(Rt_Rc ~ exp(-b * time), data = try_df, start = list(b = 0))
+  residuals <- as.numeric(summary(model)$residuals)
+  rm.sample <- which(abs(residuals) >= as.numeric(quantile(abs(residuals), 0.999) ))
+  if(length(rm.sample) == 0 | 1 %in% rm.sample | 6 %in% rm.sample){
+      try_df <- try_df
+  }else{
+      try_df <- try_df[-1 *(rm.sample), ]
+  }
+  model <-nls(Rt_Rc ~ exp(-b * time), data = try_df, start = list( b = 0))
+  slope <- coef(model)[[1]]
+  half_life <- log(2)/slope
+  
+  predict_df <- data.frame(time=0:50)
+  predict_df$predict <- predict(model , predict_df) 
+  new_data <- merge(predict_df, try_df, all=T)
+  
+  x <- ggplot(new_data, aes(x=time, y=Rt_Rc)) + 
+       geom_point( aes(x=time, y=Rt_Rc), size=2) + 
+       geom_line(aes(x=time, y=predict)) +  
+       theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+             panel.background = element_blank(), axis.line.x = element_line(colour = "black"),  
+             axis.line.y = element_line(colour = "black")) + 
+       ggtitle(paste(half_life_df[half_life_df$fb_t_id == fb_t_id,]$gene, " ", round(half_life, 2))) + 
+       geom_vline(xintercept= half_life, linetype=4) + 
+       geom_hline(yintercept=0.5, linetype=4)+
+       xlab("TRI treatment (min)") +
+       ylab("Pol II reads (%)")+
+       scale_y_continuous( limits = c(0, 1), labels = c(0, 25, 50, 75, 100))
+  x
+}
+
+plot_fitting("FBtr0334867")
+```
+
+### Pol II heatmap
+
+For display purposes, the Pol II measurements at each promoter were normalized to the maximum Pol II signal under control condition.
+
+```{r Pol_II_heatmap}
+half_life_tss <- merge(as.data.frame(tss), half_life_df) %>% 
+                 makeGRangesFromDataFrame(., keep.extra.columns=T) %>%
+                 .[order(.$rank),]
+
+
+matrix_list <- cache("polii_matrix_list.rds", function(){
+  mclapply(sample_names, function(x)get_exo_matrix(half_life_tss,x,sample_format = "separate"))
+})          
+
+
+max.per.gene.pos <- apply(matrix_list[[1]]$pos, 1, function(x){quantile(x, 0.99)})
+min.per.gene.pos <- apply(matrix_list[[1]]$pos, 1, function(x){quantile(x, 0.5)})
+
+max.per.gene.neg <- apply(matrix_list[[1]]$neg, 1, function(x){quantile(x, 0.99)})
+min.per.gene.neg <- apply(matrix_list[[1]]$neg, 1, function(x){quantile(x, 0.5)})
+
+matrix_normalized <- lapply(matrix_list, function(x){
+    matrix.p <- x$pos
+    matrix.p [matrix.p <= min.per.gene.pos] <- NA
+    matrix.p <- pmin(matrix.p / max.per.gene.pos,1)
+    
+    matrix.n <- x$neg
+    matrix.n [matrix.n <= min.per.gene.neg] <- NA
+    matrix.n <- pmin(matrix.n / max.per.gene.neg,1)
+    list(pos=matrix.p, neg=matrix.n)
+})
+
+
+pos.colors <- colorRampPalette(c("white", "red"))(100)
+neg.colors <- paste0(colorRampPalette(c("white", "blue"))(100), "77")
+
+draw_heatmap <- function(matrix, title){
+    p.max <- round(max(matrix$pos, na.rm=T) *100)
+    p.min <- round(min(matrix$pos, na.rm=T) *100)
+    n.max <- round(max(matrix$neg, na.rm=T) *100)
+    n.min <- round(min(matrix$neg, na.rm=T) *100)
+        
+    image(t(matrix$pos[nrow(matrix$pos):1,]), col=pos.colors[p.min:p.max], useRaster=TRUE, main=title)
+    image(t(matrix$neg[nrow(matrix$neg):1,]), col=neg.colors[n.min:n.max], useRaster=TRUE, add=TRUE)
+    abline(v=0.5,lty=4, lwd=2)
+}
+
+names(matrix_normalized) <- c("DMSO", "Triptolide 5 min", "Triptolide 10 min", "Triptolide 20 min", "Triptolide 30 min")
+nothing <- lapply(names(matrix_normalized), function(x)draw_heatmap(matrix_normalized[[x]], x))
+```
+
+```{r heatmap_lagend,fig.width= 3.5, fig.height=2.5 }
+image(matrix(1:100, nrow=100), col=pos.colors, useRaster=T, main= "pos")
+image(matrix(1:100, nrow=100), col=neg.colors, useRaster=T, main = "neg")
+```
+
+```{r}
+sessionInfo()
+```
+

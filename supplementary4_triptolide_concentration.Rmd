@@ -1,0 +1,57 @@
+``` {r setup, echo=FALSE, message=FALSE, include=FALSE, error=FALSE}
+library(GenomicRanges, warn.conflicts=F)
+library(magrittr)
+library(parallel)
+library(ggplot2)
+
+setwd("/data/analysis_code/")
+options(knitr.figure_dir = "supplementary4_triptolide_concentration")
+source("shared_code/knitr_common.r")
+source("shared_code/granges_common.r")
+source("shared_code/metapeak_common.r")
+source("shared_code/sample_common.r")
+```
+
+# Supplementary Triptolide concentration
+
+**Author:** [Wanqing Shao](mailto:was@stowers.org)
+
+**Generated:** `r format(Sys.time(), "%a %b %d %Y, %I:%M %p")`
+
+plot the effect of low and high Triptolide concentration
+
+```{r tri_concentration}
+tss<- get(load("./rdata/dme_mrna_unique_tss.RData")) 
+tfiib <- load_bigwig("dmso_tfiib")
+tss$tfiib <- nexus_regionSums(resize(tss, 201, "center"), tfiib)
+high_tss <- tss[order(tss$tfiib, decreasing =T)][1:1000]
+dmso_polii_path <- list(pos = "/data/bigwig/kc167_dmso_polii_chipnexus_1_normalized_positive.bw", 
+                        neg = "/data/bigwig/kc167_dmso_polii_chipnexus_1_normalized_negative.bw")
+
+dmso_polii <- exo_metapeak(high_tss, dmso_polii_path, upstream=100, downstream=101, smooth=3)
+tri_0.5_polii <- get_exo_metapeak(high_tss, "kc167_triptolide_0.5um_polii_chipnexus", upstream=100, downstream=101, smooth=3)
+tri_500_polii <- get_exo_metapeak(high_tss, "kc167_triptolide_500um_polii_chipnexus", upstream=100, downstream=101, smooth=3)
+
+
+plot_exo_metapeak <- function(metapeak, pos.col, neg.col, name){
+    ymax <- max(abs(metapeak$reads))
+    x <- ggplot(metapeak, aes(x=tss_distance, y=reads, fill=strand)) + 
+         geom_area(position="identity") + scale_fill_manual(values=c(pos.col, neg.col)) +
+         ggtitle(name) + 
+         theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+         panel.background = element_blank(), axis.line.x = element_line(colour = "black"),
+         axis.line.y = element_line(colour = "black")) + 
+         xlab("distance from TSS (bp)") + 
+         ylab("average RPM") + 
+         ylim(-1 * ymax, ymax)
+    x
+}
+
+plot_exo_metapeak(dmso_polii, "#454269", "#655E92", "DMSO Pol II")
+plot_exo_metapeak(tri_0.5_polii, "#454269", "#655E92", "TRI 0.5 uM Pol II")
+plot_exo_metapeak(tri_500_polii, "#454269", "#655E92", "TRI 500 uM Pol II")
+```
+
+```{r}
+sessionInfo()
+```

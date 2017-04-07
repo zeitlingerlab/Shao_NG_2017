@@ -1,0 +1,101 @@
+``` {r setup, echo=FALSE, message=FALSE, include=FALSE, error=FALSE}
+library(GenomicRanges, warn.conflicts=F)
+library(magrittr)
+library(parallel)
+library(ggplot2)
+
+setwd("/data/analysis_code/")
+options(knitr.figure_dir = "figure2e_mRNA_and_pausing_index")
+source("shared_code/knitr_common.r")
+source("shared_code/granges_common.r")
+source("shared_code/metapeak_common.r")
+source("shared_code/sample_common.r")
+source("shared_code/heatmap_common.r")
+```
+
+# Figure 2e mRNA level and Pausing index at genes with different paused Pol II half-life
+
+**Author:** [Wanqing Shao](mailto:was@stowers.org)
+
+**Generated:** `r format(Sys.time(), "%a %b %d %Y, %I:%M %p")`
+
+
+## Overview 
+
+Check mRNA level and pausing index at genes with different paused Pol II half-life. 
+
+kc167 mRNA data were downloaded from flybase
+
+Pausing index is defined as the average amount of Pol II per base-pair in a 41 bp window around pausing position, devide by the average amount of Pol II base-pair in a 101bp window 200 bp downstream of the pausing site.
+
+### mRNA level
+
+```{r rna_level}
+kc_mrna <- read.table("/data/public_data/flybase/kc167_rna.txt",header=F, sep="\t")
+kc_mrna <- kc_mrna[, c(2,  8)]
+colnames(kc_mrna) <- c("fb_g_id", "RPKM")
+half_life_df <- get(load("./rdata/half_life_df.RData"))
+
+rna_df <- half_life_df %>% merge(., kc_mrna)
+
+rna_pval <- wilcox.test(subset(rna_df, quantile == "q1")$RPKM, subset(rna_df, quantile == "q5")$RPKM)$p.value %>% 
+            format(., scientific=T, digit=2) 
+
+rna_plot <- ggplot(rna_df, aes(x=quantile, y=log(RPKM, base=2))) + 
+            geom_boxplot(fill=c("#F0949A", "#FAD790", "#B7C593", "#81B6A9", "#6C97CA")) +  
+            ggtitle(paste0("RNA level pval=", rna_pval)) +
+            theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+                  panel.background = element_blank(), axis.line.x = element_line(colour = "black"), 
+                  axis.line.y = element_line(colour = "black"))+
+            xlab("Paused Pol II half-life") +
+            ylab("RPKM (log2)")
+rna_plot
+
+```
+
+### Pausing index
+
+```{r pausing_index}
+dmso_polii <- load_bigwig("dmso_control_polii_spikein",sample_format = "data")
+tss <- get(load("rdata/dme_mrna_unique_tss.RData"))
+
+
+### filterring out genes that are shorter than 300 bp
+all_tx <- get(load("./rdata/dme_mrna.gr.RData"))
+half_life_tx <- all_tx[all_tx$fb_t_id %in% half_life_df$fb_t_id]
+#summary(half_life_tx$width)
+### so the shortest gene is 458 bp
+
+half_life_tx <- all_tx[all_tx$fb_t_id %in% half_life_df$fb_t_id]
+half_life_tx_info <- data.frame(fb_t_id = half_life_tx$fb_t_id , width = width(half_life_tx))
+
+fp_polii <- load_bigwig("fp_polii")
+polii_mid <- resize(tss, 201, "center") %>% align_and_score_chipnexus_peaks(., fp_polii, "center")
+polii_down <- resize(polii_mid, 201, "start") %>% resize(., 1, "end")
+
+
+
+pausing_index <- ((resize(polii_mid, 41, "center") %>%
+                 nexus_regionSums(., dmso_polii)) / 41 ) /
+                 ((resize(polii_down, 101, "center") %>%
+                 nexus_regionSums(., dmso_polii) )/101)
+pausing_index <- data.frame(fb_t_id = polii_mid$fb_t_id, pausing_index=pausing_index) %>% 
+                 merge(half_life_df, .)
+
+pausing_index_pval <- wilcox.test(subset(pausing_index, quantile == "q1")$pausing_index, subset(pausing_index, quantile == "q5")$pausing_index)$p.value %>% 
+                      format(., scientific=T, digit=2) 
+
+pausing_index_plot <- ggplot(pausing_index, aes(x=quantile, y=log(pausing_index, base=2))) + 
+                      geom_boxplot(fill=c("#F0949A", "#FAD790", "#B7C593", "#81B6A9", "#6C97CA")) +  
+                      ggtitle(paste0("Pausing index pval=", pausing_index_pval)) +
+                      theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+                            panel.background = element_blank(), axis.line.x = element_line(colour = "black"), 
+                            axis.line.y = element_line(colour = "black"))+
+                      xlab("Paused Pol II half-life") +
+                      ylab("Pausing index (log2)")
+pausing_index_plot
+```
+
+```{r}
+sessionInfo()
+```

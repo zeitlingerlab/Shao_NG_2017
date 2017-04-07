@@ -1,0 +1,67 @@
+``` {r setup, echo=FALSE, message=FALSE, include=FALSE, error=FALSE}
+library(GenomicRanges, warn.conflicts=F)
+library(magrittr)
+library(parallel)
+library(ggplot2)
+
+setwd("/data/analysis_code/")
+options(knitr.figure_dir = "figure2h_promoter_element_enrichment")
+source("shared_code/knitr_common.r")
+source("shared_code/promoter_elment_enrichment_analysis.R")
+```
+
+# Figure 2h Promoter element enrichment analysis
+
+**Author:** [Wanqing Shao](mailto:was@stowers.org)
+
+**Generated:** `r format(Sys.time(), "%a %b %d %Y, %I:%M %p")`
+
+## Overview 
+
+Promoter element enrichment anslysis is performed to examine the association between promoter sequences and the degree of Pol II pausing.
+
+Known Drosophila promoter elements in each promoter were identified by the presence of the known consensus sequence with 0 mismatches in a specified window relative to the TSS (Supplementary Table 2). 
+
+Promoter elements included in this analysis:  TATA, Inr, TCT, MTE, DPE, PB, DRE, Motif1, Motif6 and Motif7.
+
+For each promoter quantile and each promoter element, the enrichment was calculated by determining the ratio between the fraction of promoter elements in the quantile and the fraction of the same promoter element in the other four quantiles. The significance for the observed frequencies was calculated with the Fisher’s exact test and corrected for multiple testing with the Benjamini & Hochberg method.
+
+
+### Promoter element enrichment
+
+```{r}
+promoters <- read.table("./promoter_elements.txt", header=T, stringsAsFactors = F)
+motifs <- promoters$name
+half_life_df <- get(load("./rdata/half_life_df.RData"))
+
+quantiles <- c("q1", "q2", "q3", "q4", "q5")
+
+motif_list <- cache("motif_list.rds", function(){
+  lapply(quantiles, function(x){
+  test_tx_id <- subset(half_life_df, quantile == x)$fb_t_id
+  control_tx_id <- subset(half_life_df, quantile != x)$fb_t_id
+  results <- mclapply(motifs, function(y)get_motif_enrichment(test_tx_id, control_tx_id, motif = y, group = x), mc.cores=1) %>%
+             do.call(rbind, .)
+  results
+  })
+})
+  
+
+motif_df <- do.call(rbind, motif_list) %>% clean_motif_table(.)
+
+motif_df$group <- factor(motif_df$group, levels=c("q5", "q4", "q3", "q2", "q1"))
+motif_df$motif_name <- factor(motif_df$motif_name, levels=c("TATA","Inr", "TCT","MTE", "DPE", "PB",  "DRE", "Motif1", "Motif6", "Motif7" ))
+
+motif_plot <- ggplot(motif_df, aes(x=motif_name, y=group, fill=enrichment)) + geom_tile() + 
+              scale_fill_gradient2(low="dodgerblue4", high= "#C72A36", mid="white") + 
+              geom_text(aes(label=star), color="black", size=8) +
+              xlab("")+ ylab("")+
+              theme(axis.text.x = element_text(angle = 60, hjust = 1, size=16), 
+                    axis.text.y = element_text(size=14),
+                    panel.border = element_rect( colour = "black", fill = NA, size=1),
+                    panel.grid.minor = element_blank(), panel.background = element_blank())
+motif_plot
+```
+```{r}
+sessionInfo()
+```

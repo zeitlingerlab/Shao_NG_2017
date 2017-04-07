@@ -1,0 +1,126 @@
+``` {r setup, echo=FALSE, message=FALSE, include=FALSE, error=FALSE}
+library(GenomicRanges, warn.conflicts=F)
+library(Rsamtools, warn.conflicts=F)
+library(GenomicAlignments)
+library(magrittr)
+library(parallel)
+
+setwd("/data/analysis_code/")
+options(knitr.figure_dir = "sample_report")
+
+source("shared_code/knitr_common.r")
+source("shared_code/granges_common.r")
+```
+
+# Sample report
+
+**Author:** [Wanqing Shao](mailto:was@stowers.org)
+
+**Generated:** `r format(Sys.time(), "%a %b %d %Y, %I:%M %p")`
+
+## Overview
+
+Generate alignment report, report contains raw sequencing reads, reads containing fixed barcode (only applicable to ChIP-nexus samples), aligned reads and uniquely aligned reads. If two replicates were performed, calculate R2 values between replicates by performing linear regression on the read counts that fall within each mRNA promoter region. 
+
+### Generate alignment report
+```{r alignment_report}
+sample_list <- read.csv("./sample_list.csv", stringsAsFactors = F)
+
+status_report  <- function(name , paired=F){
+  sample_info <- sample_list[sample_list$sample_name == name,]
+  path_to_fastq <- sample_info$raw_fastq
+  path_to_processed_fastq <- sample_info$preprocessed_fastq
+  path_to_bam <- sample_info$bam
+  path_to_granges <- sample_info$granges
+
+  
+	message(" Counting original FASTQ reads...")
+	original_fastq_count <- as.integer(system(paste("zcat", path_to_fastq, "| wc -l"), intern=T))  / 4
+	
+	message(" Counting processed FASTQ reads...")
+	if(nchar(path_to_processed_fastq) ==0){
+		processed_fastq_count <- NA
+	}else{
+		processed_fastq_count  <- as.integer(system(paste("zcat", path_to_processed_fastq, "| wc -l"), intern=T))  / 4
+	}
+	
+	message(" Counting total aligned reads...")
+	if(paired) {
+	  bam_count <- length(readGAlignmentPairs(as.character(path_to_bam)))
+	} else {
+	  bam_count <- length(readGAlignments(as.character(path_to_bam)))
+	}
+
+		message(" Counting uniquely aligned reads...")
+		if(sample_info$data_type == "chip_nexus"){
+	    granges_count <- length(readRDS(path_to_granges))
+		}else{
+		  granges_count <- length(get(load(path_to_granges)))
+		}
+
+	status.df <- data.frame(sample = name, raw_reads = original_fastq_count, 
+	                        pf_reads= processed_fastq_count, aligned_reads=bam_count, 
+	                        uniquely_aligned=granges_count)
+	status.df
+}
+
+samples <- sample_list$sample_name
+
+status_report_list <- cache("alignment_report.rds",  function(){
+  mclapply(samples, function(x)status_report(x), mc.cores=10)
+})
+
+status_report_df <- do.call(rbind, status_report_list)
+rownames(status_report_df) <- NULL
+pander(status_report_df, "alignment report")
+
+```
+
+### Checking the consistency between replicates
+
+```{r checking_replicate}
+tss <- get(load("./rdata/dme_mrna_unique_tss.RData"))
+
+checking_replicate <- function(name){
+  sample_info <- sample_list[sample_list$short_name == name,]
+  path_to_granges <- sample_info$granges
+ 
+  rds1 <- readRDS(as.character(path_to_granges[1]))
+  rds2 <- readRDS(as.character(path_to_granges[2]))
+  
+  if(length(grep("spikein",path_to_granges)) ==2){
+    seqlevels(rds1, force=T) <- grep("dm3", seqlevels(rds1), value=T)
+    seqlevels(rds1, force=T) <- gsub("dm3_","", seqlevels(rds1))
+    
+    seqlevels(rds2, force=T) <- grep("dm3", seqlevels(rds2), value=T)
+    seqlevels(rds2, force=T) <- gsub("dm3_","", seqlevels(rds2))
+  }
+  cov1 <- resize(rds1, 1, "start") %>% coverage(.)
+  cov2 <- resize(rds2, 1, "start") %>% coverage(.)
+  
+  rep1 <- resize(tss, 201, "center") %>% regionSums(., cov1)
+  rep2 <- resize(tss, 201, "center") %>% regionSums(., cov2)
+  r2 <- summary(lm(rep1 ~rep2))$r.square
+  df <- data.frame(sample_name =sample_info$sample_name , r_squared = round(r2, digit=3))
+  df
+}
+
+sample_with_rep <- subset(sample_list, nchar(replicate) > 1)$short_name %>% unique(.) 
+
+
+consistency_report_list <- cache("consistency_report1.rds",  function(){
+  mclapply(sample_with_rep, function(x)checking_replicate(x), mc.cores=4)
+})
+ 
+consistency_report_df <- do.call(rbind, consistency_report_list)
+colnames(consistency_report_df) <- c( "sample","r_squared" )
+rownames(consistency_report_df) <- NULL
+pander(consistency_report_df, "consistency report")
+
+report.df <- merge(status_report_df, consistency_report_df)
+write.table(report.df, file="/data/analysis_code/sample_report.txt")  
+```
+
+```{r}
+sessionInfo()
+```

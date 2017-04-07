@@ -1,0 +1,92 @@
+``` {r setup, echo=FALSE, message=FALSE, include=FALSE, error=FALSE}
+library(GenomicRanges, warn.conflicts=F)
+library(magrittr)
+library(parallel)
+library(ggplot2)
+
+setwd("/data/analysis_code/")
+options(knitr.figure_dir = "figure1c_1d_basal_factors_and_polii_under_control_and_triptolide_treated_condition")
+source("shared_code/knitr_common.r")
+source("shared_code/granges_common.r")
+source("shared_code/metapeak_common.r")
+source("shared_code/sample_common.r")
+```
+
+# Figure 1c and 1d Comparison between ChIP-seq and ChIP-nexus at gene Pino
+
+**Author:** [Wanqing Shao](mailto:was@stowers.org)
+
+**Generated:** `r format(Sys.time(), "%a %b %d %Y, %I:%M %p")`
+
+## Overview
+
+Plot basal factors and Pol II average profile across the top 1000 genes with highest TFIIB signal
+
+Basal transcription factors and Pol II ChIP-nexus data were processed and aligned to the dm3 genome. Kept were only the nucleotides where the exonuclease stopped digestion (a single stop base for each read) and no data smoothing was performed. The top 1000 promoters with highest TFIIB signal were selected by calculating the sum of the TFIIB ChIP-nexus signal (under normal conditions) within a 201 bp window centered on the TSS. For each factor, two ChIP-nexus replicates were merged after read-count normalization. The average ChIP-nexus signal for the top 1000 promoters was calculated in reads per million (RPM) after aligning to the TSS. 
+
+### Basal factors and Pol II profile under control condition
+
+```{r btfs_and_polii_average_profile_control}
+
+tss <- get(load("./rdata/dme_mrna_unique_tss.RData"))
+tfiib <- load_bigwig("dmso_tfiib")
+tss$tfiib <- nexus_regionSums(resize(tss, 201, "center"), tfiib)
+high_tss <- tss[order(tss$tfiib, decreasing =T)][1:1000]
+
+dmso_samples <- grep("dmso", sample_list$short_name, value = T) %>% grep("spikein", ., value=T, invert=T) %>% unique(.)
+
+dmso_metapeak_list <- cache("dmso_btf_metapeak_list.rds", function(){
+  mclapply(dmso_samples, function(x)get_exo_metapeak(high_tss, x, smooth=3),mc.cores=5)
+})
+
+names(dmso_metapeak_list) <- dmso_samples
+
+plot_exo_metapeak <- function(metapeak, pos.col, neg.col, name){
+    ymax <- max(abs(metapeak$reads))
+    x <- ggplot(metapeak, aes(x=tss_distance, y=reads, fill=strand)) + 
+         geom_area(position="identity") + scale_fill_manual(values=c(pos.col, neg.col)) +
+         ggtitle(name) + 
+         theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+         panel.background = element_blank(), axis.line.x = element_line(colour = "black"),
+         axis.line.y = element_line(colour = "black")) + 
+         xlab("distance from TSS (bp)") + 
+         ylab("average RPM") + 
+         ylim(-1 * ymax, ymax)
+    x
+}
+
+plot_exo_metapeak(dmso_metapeak_list$dmso_tfiia, "#FCC75C", "#FAE8A7", "DMSO TFIIA")
+plot_exo_metapeak(dmso_metapeak_list$dmso_tfiib, "#00A982", "#81CD91", "DMSO TFIIB")
+plot_exo_metapeak(dmso_metapeak_list$dmso_tfiif, "#593987", "#8F609F", "DMSO TFIIF")
+plot_exo_metapeak(dmso_metapeak_list$dmso_tbp, "#C14951", "#D67D80", "DMSO TBP")
+plot_exo_metapeak(dmso_metapeak_list$dmso_polii, "#454269", "#655E92", "DMSO Pol II")
+plot_exo_metapeak(dmso_metapeak_list$dmso_taf2, "#577FB3", "#78B7D6", "DMSO TAF2")
+plot_exo_metapeak(dmso_metapeak_list$dmso_xpb, "#AA8D50", "#D9B778", "DMSO XPB")
+```
+
+### Basal factors and Pol II profile under Triptolide treated condition
+
+
+```{r btfs_and_polii_average_profile_tri}
+
+tri_samples <- grep("tri", sample_list$short_name, value = T) %>% grep("spikein", ., value=T, invert=T) %>% unique(.)
+
+tri_metapeak_list <- cache("tri_btf_metapeak_list.rds", function(){
+  mclapply(tri_samples, function(x)get_exo_metapeak(high_tss, x, smooth=3),mc.cores=5)
+})
+
+names(tri_metapeak_list) <- tri_samples
+
+plot_exo_metapeak(tri_metapeak_list$tri_tfiia, "#FCC75C", "#FAE8A7", "Triptolide TFIIA")
+plot_exo_metapeak(tri_metapeak_list$tri_tfiib, "#00A982", "#81CD91", "Triptolide TFIIB")
+plot_exo_metapeak(tri_metapeak_list$tri_tfiif, "#593987", "#8F609F", "Triptolide TFIIF")
+plot_exo_metapeak(tri_metapeak_list$tri_tbp, "#C14951", "#D67D80", "Triptolide TBP")
+plot_exo_metapeak(tri_metapeak_list$tri_polii, "#454269", "#655E92", "Triptolide Pol II")
+plot_exo_metapeak(tri_metapeak_list$tri_taf2, "#577FB3", "#78B7D6", "Triptolide TAF2")
+plot_exo_metapeak(tri_metapeak_list$tri_xpb, "#AA8D50", "#D9B778", "Triptolide XPB")
+```
+
+```{r}
+sessionInfo()
+```
+

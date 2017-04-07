@@ -1,0 +1,127 @@
+``` {r setup, echo=FALSE, message=FALSE, include=FALSE, error=FALSE}
+library(GenomicRanges, warn.conflicts=F)
+library(magrittr)
+library(parallel)
+library(ggplot2)
+
+setwd("/data/analysis_code/")
+options(knitr.figure_dir = "supplementary2_basal_factors_and_polii_peak_position")
+source("shared_code/knitr_common.r")
+source("shared_code/granges_common.r")
+source("shared_code/metapeak_common.r")
+source("shared_code/sample_common.r")
+```
+
+# Supplementary basal factors and Pol II peak position
+
+**Author:** [Wanqing Shao](mailto:was@stowers.org)
+
+**Generated:** `r format(Sys.time(), "%a %b %d %Y, %I:%M %p")`
+
+## Overview
+We will plot the average profile of basal factors and Pol II across the top1000 genes with highest TFIIB signal. Peak position will be highlighted. 
+
+### Basal factors and Pol II profile under control condition
+
+```{r btfs_and_polii_average_profile_control}
+
+tss <- get(load("./rdata/dme_mrna_unique_tss.RData"))
+tfiib <- load_bigwig("dmso_tfiib")
+tss$tfiib <- nexus_regionSums(resize(tss, 201, "center"), tfiib)
+high_tss <- tss[order(tss$tfiib, decreasing =T)][1:1000]
+
+dmso_samples <- grep("dmso", sample_list$short_name, value = T) %>% grep("spikein", ., value=T, invert=T) %>% unique(.)
+
+dmso_metapeak_list <- cache("dmso_btf_metapeak_list.rds", function(){
+  mclapply(dmso_samples, function(x)get_exo_metapeak(high_tss, x, smooth=3),mc.cores=5)
+})
+
+
+names(dmso_metapeak_list) <- dmso_samples
+
+localMaxima <- function(x) {
+  # Use -Inf instead if x is numeric (non-integer)
+  y <- diff(c(-.Machine$integer.max, x)) > 0L
+  rle(y)$lengths
+  y <- cumsum(rle(y)$lengths)
+  y <- y[seq.int(1L, length(y), 2L)]
+  if (x[[1]] == x[[2]]) {
+    y <- y[-1]
+  }
+  y
+}
+
+plot_exo_metapeak <- function(metapeak, pos.col, neg.col, name){
+    
+    ymax <- max(abs(metapeak$reads))
+    
+    peaks <- localMaxima(abs(metapeak$reads))
+    metapeak$position <- NA
+    metapeak$position[peaks] <- metapeak$reads[peaks]
+    
+    metapeak.p <- subset(metapeak, strand == "+")
+    metapeak.n <- subset(metapeak, strand == "-")
+
+    metapeak.p$position <- ifelse(abs(metapeak.p$reads) < quantile(abs(metapeak.p$reads), 0.8), NA, metapeak.p$position)
+    metapeak.n$position <- ifelse(abs(metapeak.n$reads) < quantile(abs(metapeak.n$reads), 0.8), NA, metapeak.n$position)
+  
+    metapeak <- rbind(metapeak.p, metapeak.n)
+    
+    metapeak$label_position  <- metapeak$position
+    metapeak$label_position <- ifelse(metapeak$strand == "+", metapeak$label_position + ymax/20, metapeak$label_position - ymax / 20)
+    metapeak$label <- NA
+    
+    metapeak$label[peaks] <- metapeak$tss_distance[peaks]
+    metapeak$label <- ifelse(abs(metapeak$reads) < quantile(abs(metapeak$reads), 0.1), NA, metapeak$label)
+    
+    x <- ggplot(metapeak, aes(x=tss_distance, y=reads, fill=strand)) + 
+         geom_area(position="identity") + 
+         scale_fill_manual(values=c(pos.col, neg.col)) +
+         ggtitle(name) + 
+         theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+               panel.background = element_blank(), axis.line.x = element_line(colour = "black"), 
+               axis.line.y = element_line(colour = "black")) + 
+         xlab("distance from TSS (bp)") + ylab("average RPM") + 
+         ylim(-1 * (ymax + ymax / 10), ymax+ ymax/10) + 
+         geom_point(data=metapeak, aes(x=tss_distance, y=position), size=0.5)+
+         geom_text(data=metapeak, aes(x=tss_distance, y=label_position, label=label))
+    x
+}
+
+
+
+
+plot_exo_metapeak(dmso_metapeak_list$dmso_tfiia, "#FCC75C", "#FAE8A7", "DMSO TFIIA")
+plot_exo_metapeak(dmso_metapeak_list$dmso_tfiib, "#00A982", "#81CD91", "DMSO TFIIB")
+plot_exo_metapeak(dmso_metapeak_list$dmso_tfiif, "#593987", "#8F609F", "DMSO TFIIF")
+plot_exo_metapeak(dmso_metapeak_list$dmso_tbp, "#C14951", "#D67D80", "DMSO TBP")
+plot_exo_metapeak(dmso_metapeak_list$dmso_polii, "#454269", "#655E92", "DMSO Pol II")
+plot_exo_metapeak(dmso_metapeak_list$dmso_taf2, "#577FB3", "#78B7D6", "DMSO TAF2")
+plot_exo_metapeak(dmso_metapeak_list$dmso_xpb, "#AA8D50", "#D9B778", "DMSO XPB")
+```
+
+### Basal factors and Pol II profile under Triptolide treated condition
+
+```{r btfs_and_polii_average_profile_tri}
+
+
+tri_samples <- grep("tri", sample_list$short_name, value = T) %>% grep("spikein", ., value=T, invert=T) %>% unique(.)
+
+tri_metapeak_list <- cache("tri_btf_metapeak_list.rds", function(){
+  mclapply(tri_samples, function(x)get_exo_metapeak(high_tss, x, smooth=3),mc.cores=5)
+})
+
+names(tri_metapeak_list) <- tri_samples
+
+plot_exo_metapeak(tri_metapeak_list$tri_tfiia, "#FCC75C", "#FAE8A7", "Triptolide TFIIA")
+plot_exo_metapeak(tri_metapeak_list$tri_tfiib, "#00A982", "#81CD91", "Triptolide TFIIB")
+plot_exo_metapeak(tri_metapeak_list$tri_tfiif, "#593987", "#8F609F", "Triptolide TFIIF")
+plot_exo_metapeak(tri_metapeak_list$tri_tbp, "#C14951", "#D67D80", "Triptolide TBP")
+plot_exo_metapeak(tri_metapeak_list$tri_polii, "#454269", "#655E92", "Triptolide Pol II")
+plot_exo_metapeak(tri_metapeak_list$tri_taf2, "#577FB3", "#78B7D6", "Triptolide TAF2")
+plot_exo_metapeak(tri_metapeak_list$tri_xpb, "#AA8D50", "#D9B778", "Triptolide XPB")
+```
+
+```{r}
+sessionInfo()
+```

@@ -1,0 +1,87 @@
+``` {r setup, echo=FALSE, message=FALSE, include=FALSE, error=FALSE}
+library(GenomicRanges, warn.conflicts=F)
+library(magrittr)
+library(parallel)
+library(ggplot2)
+
+setwd("/data/analysis_code/")
+options(knitr.figure_dir = "figure2a_triptolide_time_course_single_gene_example")
+source("shared_code/knitr_common.r")
+source("shared_code/granges_common.r")
+source("shared_code/metapeak_common.r")
+source("shared_code/sample_common.r")
+```
+
+# Figure 2a single gene example for Triptolide time course experiment 
+
+**Author:** [Wanqing Shao](mailto:was@stowers.org)
+
+**Generated:** `r format(Sys.time(), "%a %b %d %Y, %I:%M %p")`
+
+## Overview
+
+We performed Triptolide time course treatment, and here we will plot single gene example to show that the level of Pol II pausing differs at different promoters
+
+### Single gene example at Pino
+```{r pino_tri_time_course}
+tss <- get(load("./rdata/dme_mrna_unique_tss.RData"))
+
+pino <- tss[tss$fb_t_id == "FBtr0077988"]
+pxb <- tss[tss$fb_t_id == "FBtr0334025"]
+
+plot_exo_single_gene <- function(metapeak, name, lim=NULL){
+    metapeak.p <- subset(metapeak, strand == "+")
+    metapeak.n <- subset(metapeak, strand == "-")
+    if(is.null(lim)){
+        x <- ggplot(metapeak.p, aes(x=tss_distance, y=reads)) + geom_bar(fill="#B23F49", stat="identity") + 
+                geom_bar(data=metapeak.n, aes(x=tss_distance, y=reads), fill="#045CA8", stat="identity") + 
+                ggtitle(name) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+        panel.background = element_blank(), axis.line.x = element_line(colour = "black"), axis.line.y = element_line(colour = "black")) + xlab("distance from TSS (bp)") + ylab("Reads per million")
+    }else{
+        x <- ggplot(metapeak.p, aes(x=tss_distance, y=reads)) + geom_bar(fill="#B23F49", stat="identity") + 
+                geom_bar(data=metapeak.n, aes(x=tss_distance, y=reads), fill="#045CA8", stat="identity") + 
+                ggtitle(name) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+        panel.background = element_blank(), axis.line.x = element_line(colour = "black"), axis.line.y = element_line(colour = "black")) + xlab("distance from TSS (bp)") + ylab("Reads per million") + ylim(-1*lim, lim)
+    }
+    
+    x
+}
+
+
+sample_names <- c("dmso_control_polii_spikein","tri_5min_polii_spikein","tri_10min_polii_spikein", "tri_20min_polii_spikein", "tri_30min_polii_spikein")
+
+pino_metapeak_list <- cache("pino_metapeak_list",function(){
+  mclapply(sample_names, function(x)get_exo_metapeak(pino, x, sample_format = "separate"), mc.cores=5)
+})
+
+names(pino_metapeak_list) <- c("dmso", "tri_5", "tri_10", "tri_20", "tri_30")
+pino.lim <- ceiling(max(abs(do.call(rbind, pino_metapeak_list)$reads)))
+
+plot_exo_single_gene(pino_metapeak_list$dmso, "DMSO 1h at pino", pino.lim)
+plot_exo_single_gene(pino_metapeak_list$tri_5, "Triptolide 5 min at pino", pino.lim)
+plot_exo_single_gene(pino_metapeak_list$tri_10, "Triptolide 10 min at pino", pino.lim)
+plot_exo_single_gene(pino_metapeak_list$tri_20, "Triptolide 20 min at pino", pino.lim)
+plot_exo_single_gene(pino_metapeak_list$tri_30, "Triptolide 30 min at pino", pino.lim)
+
+```
+
+### Single gene example at Pxb
+
+```{r pxb_tri_time_course}
+pxb_metapeak_list <- cache("pxb_metapeak_list",function(){
+  mclapply(sample_names, function(x)get_exo_metapeak(pxb, x, sample_format = "separate"), mc.cores=5)
+})
+
+names(pxb_metapeak_list) <- c("dmso", "tri_5", "tri_10", "tri_20", "tri_30")
+pxb.lim <- ceiling(max(abs(do.call(rbind, pxb_metapeak_list)$reads)))
+
+plot_exo_single_gene(pxb_metapeak_list$dmso, "DMSO 1h at pxb", pxb.lim)
+plot_exo_single_gene(pxb_metapeak_list$tri_5, "Triptolide 5 min at pxb", pxb.lim)
+plot_exo_single_gene(pxb_metapeak_list$tri_10, "Triptolide 10 min at pxb", pxb.lim)
+plot_exo_single_gene(pxb_metapeak_list$tri_20, "Triptolide 20 min at pxb", pxb.lim)
+plot_exo_single_gene(pxb_metapeak_list$tri_30, "Triptolide 30 min at pxb", pxb.lim)
+```
+
+```{r}
+sessionInfo()
+```

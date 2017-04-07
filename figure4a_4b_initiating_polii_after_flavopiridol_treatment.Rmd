@@ -1,0 +1,108 @@
+``` {r setup, echo=FALSE, message=FALSE, include=FALSE, error=FALSE}
+library(GenomicRanges, warn.conflicts=F)
+library(magrittr)
+library(parallel)
+library(ggplot2)
+library(reshape)
+
+
+setwd("/data/analysis_code/")
+
+options(knitr.figure_dir = "figure4a_4b_initiating_polii_after_fP_DRB_treatment")
+source("shared_code/knitr_common.r")
+source("shared_code/granges_common.r")
+source("shared_code/metapeak_common.r")
+source("shared_code/sample_common.r")
+```
+
+# Figure 4a and 4b initiating polii after Flavopiridol and DRB treatment
+
+**Author:** [Wanqing Shao](mailto:was@stowers.org)
+
+**Generated:** `r format(Sys.time(), "%a %b %d %Y, %I:%M %p")`
+
+## Overview
+
+Examine the amount of initiating Pol ii after Flavopiridol and DRB treatment
+
+### boxplot
+
+```{r boxplot}
+
+tss <- get(load("rdata/dme_mrna_unique_tss.RData"))
+half_life_df <- get(load("rdata/half_life_df.RData"))
+dmso_polii <- load_bigwig("dmso_polii")
+fp_polii <- load_bigwig("fp_0.5_polii")
+drb_polii <- load_bigwig("drb_50um_polii")
+
+q1q2_tss <- tss[tss$fb_t_id %in% subset(half_life_df, quantile=="q1" |quantile=="q2")$fb_t_id]
+
+dmso_total_polii <- resize(q1q2_tss, 201, "center") %>% 
+                    nexus_regionSums(., dmso_polii)  
+dmso_initiating_polii <- resize(q1q2_tss, 41, "end") %>%
+                         nexus_regionSums(., dmso_polii) 
+
+fp_total_polii <- resize(q1q2_tss, 201, "center") %>% 
+                  nexus_regionSums(., fp_polii)  
+fp_initiating_polii <- resize(q1q2_tss, 41, "end") %>%
+                       nexus_regionSums(., fp_polii)
+
+
+drb_total_polii <- resize(q1q2_tss, 201, "center") %>% 
+                  nexus_regionSums(., drb_polii)  
+drb_initiating_polii <- resize(q1q2_tss, 41, "end") %>%
+                       nexus_regionSums(., drb_polii)
+
+
+polii_df <- data.frame(sample = rep(c("dmso", "fp", "drb"), each=length(q1q2_tss)), 
+                      ratio = c(dmso_initiating_polii / dmso_total_polii, fp_initiating_polii/fp_total_polii, drb_initiating_polii/drb_total_polii))
+polii_df$sample <- factor(polii_df$sample, levels=c("dmso", "fp", "drb"))
+polii_pval_fp <- wilcox.test(subset(polii_df, sample=="dmso")$ratio,subset(polii_df, sample=="fp")$ratio)$p.value %>% 
+              format(., scientific=T, digit=2)
+
+polii_pval_drb <- wilcox.test(subset(polii_df, sample=="dmso")$ratio,subset(polii_df, sample=="drb")$ratio)$p.value %>% 
+              format(., scientific=T, digit=2)
+
+
+polii_boxplot <- ggplot(polii_df , aes(x=sample, y=ratio )) +                     
+                 geom_boxplot(fill="#F0DBB9") +  
+                 ggtitle(paste0("Initiating Pol II pval=", polii_pval_fp,"and",polii_pval_drb ))+
+                 theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+                       panel.background = element_blank(), axis.line.x = element_line(colour = "black"), 
+                       axis.line.y = element_line(colour = "black"))+
+                 ylab("Initiating Pol II (%)") + 
+                 scale_y_continuous( limits = c(0, 0.4), labels = c(0, 10, 20, 30, 40))
+  
+polii_boxplot  
+
+```
+
+### Metapeak
+
+```{r metapeak}
+dmso_metapeak <- exo_metapeak(q1q2_tss, dmso_polii,upstream=100, downstream = 101, smooth=3, sample_name = "q1 q2")
+fp_metapeak <- exo_metapeak(q1q2_tss, fp_polii,  upstream=100, downstream = 101,  smooth=3,sample_name = "q1 q2")
+drb_metapeak <- exo_metapeak(q1q2_tss, drb_polii,  upstream=100, downstream = 101,  smooth=3,sample_name = "q1 q2")
+
+plot_exo_metapeak <- function(metapeak, pos.col, neg.col, name){
+    ymax <- max(abs(metapeak$reads))
+    x <- ggplot(metapeak, aes(x=tss_distance, y=reads, fill=strand)) + 
+         geom_area(position="identity") + scale_fill_manual(values=c(pos.col, neg.col)) +
+         ggtitle(name) + 
+         theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+         panel.background = element_blank(), axis.line.x = element_line(colour = "black"),
+         axis.line.y = element_line(colour = "black")) + 
+         xlab("distance from TSS (bp)") + 
+         ylab("average RPM") + 
+         ylim(-1 * ymax, ymax)
+    x
+}
+
+plot_exo_metapeak(dmso_metapeak, "#DDB97B", "#F0DBB9", "Control Pol II (q1 and q2)")
+plot_exo_metapeak(fp_metapeak, "#DDB97B", "#F0DBB9", "FP Pol II (q1 and q2)")
+plot_exo_metapeak(drb_metapeak, "#DDB97B", "#F0DBB9", "DRB Pol II (q1 and q2)")
+
+```
+```{r}
+sessionInfo()
+```

@@ -1,0 +1,65 @@
+``` {r setup, echo=FALSE, message=FALSE, include=FALSE, error=FALSE}
+library(GenomicRanges, warn.conflicts=F)
+library(magrittr)
+library(parallel)
+library(ggplot2)
+
+setwd("/data/analysis_code/")
+options(knitr.figure_dir = "figure1a_comparison_between_chipseq_and_chipnexus")
+
+source("shared_code/knitr_common.r")
+source("shared_code/granges_common.r")
+source("shared_code/metapeak_common.r")
+source("shared_code/sample_common.r")
+```
+
+# Figure 1a Comparison between ChIP-seq and ChIP-nexus at gene Pino
+
+**Author:** [Wanqing Shao](mailto:was@stowers.org)
+
+**Generated:** `r format(Sys.time(), "%a %b %d %Y, %I:%M %p")`
+
+## Overview
+
+Plot TFIIA, TFIIB and Pol II ChIP-seq and ChIP-nexus in the same figure to show that ChIP-nexus provides much higher resolution
+
+### Comparison between ChIP-seq and ChIP-nexus at gene Pino (tx_id: FBtr0077988)
+
+In order to plot both data type in the same figure, we use normalized reads (min to max) as the y-axis. Single gene example is used to show that ChIP-nexus works well at single gene level without additional smoothing.
+
+```{r compare_chipseq_chipnexus, warning=F, message=F}
+
+tss <- get(load("./rdata/dme_mrna_unique_tss.RData"))
+pino <- tss[tss$fb_t_id == "FBtr0077988"]
+
+combined_chipseq_and_chipnexus <- function(gr, chipseq, chipnexus,title, upstream=200, downstream=201, name=NULL, smooth=NULL){
+  chipseq.metapeak <- get_standard_metapeak(gr, chipseq, upstream=upstream, downstream=downstream)
+  chipnexus.metapeak <- get_exo_metapeak(gr, chipnexus,upstream=upstream, downstream=downstream)
+  
+  chipseq.metapeak$reads <- chipseq.metapeak$reads / max(abs(chipseq.metapeak$reads))
+  chipnexus.metapeak$reads <- chipnexus.metapeak$reads / max(abs(chipnexus.metapeak$reads))
+
+  chipnexus.metapeak.p <- subset(chipnexus.metapeak, strand=="+")
+  chipnexus.metapeak.n <- subset(chipnexus.metapeak, strand=="-")
+  
+  x <- ggplot(chipseq.metapeak, aes(x=tss_distance, y=reads, fill=sample_name)) + 
+    geom_area(position="identity", fill="#BAC6D7") + 
+    geom_bar(data=chipnexus.metapeak.p, stat="identity", aes(x=tss_distance, y=reads), fill="#B23F49", col=NA) +
+    geom_bar(data=chipnexus.metapeak.n, stat="identity", aes(x=tss_distance, y=reads), fill="#045CA8") + 
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+          panel.background = element_blank(), axis.line.x = element_line(colour = "black"), 
+          axis.line.y = element_line(colour = "black")) + 
+    xlab("Distance from TSS (bp)") + 
+    ylab("Normalized reads")+ ylim(-1, 1) + 
+    ggtitle(title)+
+    scale_y_continuous(breaks=c(-1, 0, 1), labels = c(1, 0, 1)) 
+  x
+}
+
+combined_chipseq_and_chipnexus(pino, "tfiia_chipseq", "tfiia_chipnexus", "TFIIA")
+combined_chipseq_and_chipnexus(pino, "tfiib_chipseq", "tfiib_chipnexus", "TFIIB")
+combined_chipseq_and_chipnexus(pino, "polii_chipseq", "polii_chipnexus", "Pol II")
+```
+```{r}
+sessionInfo()
+```
