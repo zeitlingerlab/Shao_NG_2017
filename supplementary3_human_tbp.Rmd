@@ -1,0 +1,181 @@
+``` {r setup, echo=FALSE, message=FALSE, include=FALSE, error=FALSE}
+library(GenomicRanges, warn.conflicts=F)
+library(magrittr)
+library(parallel)
+library(ggplot2)
+library(reshape)
+
+setwd("/data/analysis_code/")
+options(knitr.figure_dir = "supplementary3_human_tbp")
+source("shared_code/knitr_common.r")
+source("shared_code/granges_common.r")
+source("shared_code/metapeak_common.r")
+source("shared_code/sample_common.r")
+source("shared_code/heatmap_common.r")
+```
+
+# Supplementary human TBP
+
+**Author:** [Wanqing Shao](mailto:was@stowers.org)
+
+**Generated:** `r format(Sys.time(), "%a %b %d %Y, %I:%M %p")`
+
+Plot TBP data in human cells
+
+### Generating isolated TSS and correct TSS position based on K562 grocap data
+
+Take Homo_sapiens.GRCh37.75.gtf.gz and use Lis's group's K562 grocap data to reannotate the TSS, then filter out start sites that are less than 300bp from each other
+
+```{r eval=F}
+library(BSgenome.Hsapiens.UCSC.hg19)
+
+all.tx <- import("/data/public_data/human_annotation/Homo_sapiens.GRCh37.75.gtf.gz")
+tx.gr <- all.tx[all.tx$type == "transcript" & all.tx$source == "protein_coding"]
+seqlevels(tx.gr) <- paste0("chr", seqlevels(tx.gr))
+
+cap.pos <- import("/data/public_data/lis_grocap/GSM1480321_K562_GROcap_wTAP_plus.bigWig", asRle = T)
+cap.neg <- abs(import("/data/public_data/lis_grocap/GSM1480321_K562_GROcap_wTAP_minus.bigWig", asRle = T))
+
+cap.pos <- cap.pos/ sum(cap.pos) * 1000000
+cap.neg <- cap.neg/ sum(cap.neg) * 1000000
+
+tx.gr <- tx.gr[seqnames(tx.gr) %in% seqlevels(cap.pos)]
+
+
+tss_realignment <- function(strand, procap){
+  tx <- tx.gr[strand(tx.gr) == strand]
+  tx.r <- resize(tx, 1, "start") %>% resize(., 301, "center")
+  tx.r$new_start <- procap %>% regionWhichMaxs(tx.r,.) 
+  tx.r$procap_sig <- procap %>% regionSums(tx.r, .)
+  start(tx.r) <- ifelse(tx.r$procap_sig >= 20, tx.r$new_start, start(tx.r))
+  end(tx.r) <- start(tx.r)
+  tx.r
+}
+
+tss_pos <- tss_realignment("+", cap.pos)
+tss_neg <- tss_realignment("-", cap.neg)
+tss <- c(tss_pos, tss_neg)
+
+seqlevels(tss, force=T) <- c("chr1", "chr2", "chr3", "chr4", "chr5", "chr6", "chr7", "chr8", 
+"chr9", "chr10", "chr11", "chr12", "chr13", "chr14", "chr15", 
+"chr16", "chr17", "chr18", "chr19", "chr20", "chr21", "chr22", 
+"chrX", "chrY", "chrM")
+
+
+
+tss_temp <- tss[order(tss$procap_sig, decreasing=T)] %>% 
+            .[!duplicated(paste(seqnames(.), start(.)))]
+
+strand(tss_temp) <- "*"
+tss_temp <- tss_temp[order(tss_temp)]
+
+all_dis <- c(start(tss_temp), Inf) - c(0, start(tss_temp))
+
+tss_temp$dis_before <- all_dis[1:length(tss_temp)]
+tss_temp$dis_after <- all_dis[2:length(all_dis)]
+
+tss_temp <-subset(tss_temp, dis_before > 300 & dis_after > 300) 
+tss_u <- tss[tss$transcript_id %in% tss_temp$transcript_id]
+
+
+save(tss_u, file="./rdata/hg19_isolated_tss.RData")
+```
+
+### Plot Human TBP 
+
+```{r tbp, eval=T}
+tss <- get(load("./rdata/hg19_isolated_tss.RData"))
+pugh_tbp <- readRDS("/data/public_data/pugh_tbp/tbp1_k562_pugh.cl.rds")
+
+zeitlinger_tbp1 <- list(pos=import("/data/public_data/zeitlinger_tbp/GSM1333891_hsap_k562_tbp_chipnexus_01_positive.bw", asRle = T),
+                       neg=import("/data/public_data/zeitlinger_tbp/GSM1333891_hsap_k562_tbp_chipnexus_01_negative.bw", asRle = T))
+
+zeitlinger_tbp2 <- list(pos=import("/data/public_data/zeitlinger_tbp/GSM1333892_hsap_k562_tbp_chipnexus_02_positive.bw", asRle = T),
+                       neg=import("/data/public_data/zeitlinger_tbp/GSM1333892_hsap_k562_tbp_chipnexus_02_negative.bw", asRle = T))
+
+normalize_and_combine <- function(rep1, rep2=NULL){
+  rep1_total <- sum(abs(rep1$pos), abs(rep1$neg))
+  rep1_pos <-  rep1$pos / rep1_total  * 1000000
+  rep1_neg <-  abs(rep1$neg) / rep1_total * (-1) * 1000000
+  
+  if(is.null(rep2)){
+  bw <- list(pos=rep1_pos, neg=rep1_neg)
+  }else{
+  rep2_total <- sum(abs(rep2$pos), abs(rep2$neg))
+  rep2_pos <-  rep2$pos / rep2_total * 1000000
+  rep2_neg <-  abs(rep2$neg) / rep2_total * (-1) * 1000000
+  
+  bw <- list(pos = rep1_pos + rep2_pos, neg = rep1_neg + rep2_neg)
+  }
+
+  bw
+}
+
+zeitlinger_tbp <- normalize_and_combine(zeitlinger_tbp1, zeitlinger_tbp2)
+pugh_tbp <- normalize_and_combine(pugh_tbp)
+
+tss$tbp <- resize(tss, 201, "center") %>% nexus_regionSums(., zeitlinger_tbp)
+
+high_tss <- tss[order(tss$tbp, decreasing=T)][1:2000]
+
+tbp_pugh_metapeak <- exo_metapeak(high_tss,pugh_tbp, smooth=5, sample_name = "Pugh TBP")
+tbp_zeitlinger_metapeak <- exo_metapeak(high_tss, zeitlinger_tbp, smooth=5, sample_name = "Zeitlinger TBP")
+
+localMaxima <- function(x) {
+  # Use -Inf instead if x is numeric (non-integer)
+  y <- diff(c(-.Machine$integer.max, x)) > 0L
+  rle(y)$lengths
+  y <- cumsum(rle(y)$lengths)
+  y <- y[seq.int(1L, length(y), 2L)]
+  if (x[[1]] == x[[2]]) {
+    y <- y[-1]
+  }
+  y
+}
+
+plot_exo_metapeak <- function(metapeak, pos.col, neg.col, name){
+    
+    ymax <- max(abs(metapeak$reads))
+    
+    peaks <- localMaxima(abs(metapeak$reads))
+    metapeak$position <- NA
+    metapeak$position[peaks] <- metapeak$reads[peaks]
+    
+    metapeak.p <- subset(metapeak, strand == "+")
+    metapeak.n <- subset(metapeak, strand == "-")
+
+    metapeak.p$position <- ifelse(abs(metapeak.p$reads) < quantile(abs(metapeak.p$reads), 0.7), NA, metapeak.p$position)
+    metapeak.n$position <- ifelse(abs(metapeak.n$reads) < quantile(abs(metapeak.n$reads), 0.7), NA, metapeak.n$position)
+  
+    metapeak <- rbind(metapeak.p, metapeak.n)
+    
+    metapeak$label_position  <- metapeak$position
+    metapeak$label_position <- ifelse(metapeak$strand == "+", metapeak$label_position + ymax/20, metapeak$label_position - ymax / 20)
+    metapeak$label <- NA
+    
+    metapeak$label[peaks] <- metapeak$tss_distance[peaks]
+    metapeak$label <- ifelse(abs(metapeak$reads) < quantile(abs(metapeak$reads), 0.1), NA, metapeak$label)
+    
+    x <- ggplot(metapeak, aes(x=tss_distance, y=reads, fill=strand)) + 
+         geom_area(position="identity") + 
+         scale_fill_manual(values=c(pos.col, neg.col)) +
+         ggtitle(name) + 
+         theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+               panel.background = element_blank(), axis.line.x = element_line(colour = "black"), 
+               axis.line.y = element_line(colour = "black")) + 
+         xlab("distance from TSS (bp)") + ylab("average RPM") + 
+         ylim(-1 * (ymax + ymax / 10), ymax+ ymax/10) + 
+         geom_point(data=metapeak, aes(x=tss_distance, y=position), size=0.5)+
+         geom_text(data=metapeak, aes(x=tss_distance, y=label_position, label=label))
+    x
+}
+
+
+
+plot_exo_metapeak(tbp_pugh_metapeak, "#C14951", "#D67D80", "Pugh TBP")
+plot_exo_metapeak(tbp_zeitlinger_metapeak, "#C14951", "#D67D80",  "Zeitlinger TBP")
+```
+
+```{r}
+sessionInfo()
+```
