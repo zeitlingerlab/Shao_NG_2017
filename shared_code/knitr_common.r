@@ -1,7 +1,7 @@
 library(pander)
 panderOptions("table.split.table", Inf)
 
-options(knitr.project_name = "Enhancer identification")
+options(knitr.project_name = "Transcription initiation and Pol II pausing")
 
 figure_path <- function(filename="") {
   file.path(getOption("knitr.figure_dir"), filename)
