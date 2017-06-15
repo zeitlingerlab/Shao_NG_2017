@@ -10,10 +10,10 @@ read_matrix <- function(gr, cov, reverse_reads=FALSE, df=F, nu=25) {
   transform_function <- if(reverse_reads) { rev } else { identity }
   o <- order(gr)
   gr <- gr[o]
-  
+
   if(df==T){
 	reads.list <- regionApply_list(gr,cov, as.numeric )
-  	reads.list <-lapply(reads.list, function(reads) { approx(reads, n=nu)$y }) 
+  	reads.list <-lapply(reads.list, function(reads) { approx(reads, n=nu)$y })
 	reads.m <- matrix(as.numeric(unlist(reads.list, use.name=F)), nrow=length(reads.list), byrow=T)
 	if(reverse_reads == T)reads.m <- reads.m[, ncol(reads.m):1]
   }else{
@@ -30,8 +30,8 @@ read_matrix <- function(gr, cov, reverse_reads=FALSE, df=F, nu=25) {
 standard_metapeak_matrix <- function(regions.gr, sample.cov, upstream=100, downstream=100, diff_length = F, approx_nu=25) {
   if(diff_length == F){
 	    regions.gr <- resize(regions.gr, width=downstream)
-	    regions.gr <- resize(regions.gr, width=upstream + width(regions.gr), fix="end")
-  
+	    regions.gr <- trim(resize(regions.gr, width=upstream + width(regions.gr), fix="end"))
+      regions.gr <- regions.gr[width(regions.gr) == upstream+ downstream]
 	    reads <- matrix(nrow=length(regions.gr), ncol=width(regions.gr)[1])
 	}else{
 		reads <- matrix(nrow=length(regions.gr), ncol=approx_nu)
@@ -40,7 +40,7 @@ standard_metapeak_matrix <- function(regions.gr, sample.cov, upstream=100, downs
   i_n <- which(strand(regions.gr) == "-")
 
   message("There are ", length(i_p), " positive granges and ", length(i_n), " negative granges")
-  
+
   if(class(sample.cov) == "character") {
     sample.cov <- import.bw(sample.cov, which=regions.gr, asRle=TRUE)
   }
@@ -49,7 +49,7 @@ standard_metapeak_matrix <- function(regions.gr, sample.cov, upstream=100, downs
 		if(length(i_n) > 0) reads[i_n, ] <- read_matrix(regions.gr[i_n], sample.cov, reverse_reads=TRUE)
 	}else{
 		if(length(i_p) > 0)reads[i_p, ] <- read_matrix(regions.gr[i_p], sample.cov, df=diff_length, nu=approx_nu)
-		if(length(i_n) > 0)reads[i_n, ]<- read_matrix(regions.gr[i_n], sample.cov, reverse_reads=TRUE, df=diff_length,  nu=an)			
+		if(length(i_n) > 0)reads[i_n, ]<- read_matrix(regions.gr[i_n], sample.cov, reverse_reads=TRUE, df=diff_length,  nu=an)
 	}
   reads
 }
@@ -58,12 +58,12 @@ exo_metapeak_matrix <- function(regions.gr, sample, upstream=100, downstream=100
   regions.gr <- resize(regions.gr, width=downstream)
   regions.gr <- resize(regions.gr, width=upstream + width(regions.gr), fix="end")
   regions.gr <- regions.gr[width(regions.gr) == upstream+downstream]
-  
+
   i_p <- which(strand(regions.gr) == "+" | strand(regions.gr) == "*")
   i_n <- which(strand(regions.gr) == "-")
 
   message("There are ", length(i_p), " positive granges and ", length(i_n), " negative granges")
-  
+
   reads.p <- matrix(nrow=length(regions.gr), ncol=width(regions.gr)[1])
   reads.n <- reads.p
 
@@ -71,12 +71,12 @@ exo_metapeak_matrix <- function(regions.gr, sample, upstream=100, downstream=100
 	    reads.p[i_p, ] <- read_matrix(regions.gr[i_p], sample$pos, df=F, nu=NULL)
 	    reads.n[i_p, ] <- abs(read_matrix(regions.gr[i_p], sample$neg, df=F, nu=NULL))
 	  }
-  
+
 	  if(length(i_n) > 0) {
 	    reads.p[i_n, ] <- abs(read_matrix(regions.gr[i_n], sample$neg, reverse_reads=TRUE, df=F, nu=NULL))
 	    reads.n[i_n, ] <- read_matrix(regions.gr[i_n], sample$pos, reverse_reads=TRUE, df=F, nu=NULL)
 	  }
-  
+
 
 
   list(pos=reads.p, neg=reads.n)
@@ -84,37 +84,37 @@ exo_metapeak_matrix <- function(regions.gr, sample, upstream=100, downstream=100
 
 standard_metapeak <- function(gr, sample, upstream=100, downstream=100, sample_name=NA, smooth=NA, different_length=F,approx_n=25) {
   message("standard metapeak: ", sample_name)
-  if(different_length==F){  
+  if(different_length==F){
 	  reads <- standard_metapeak_matrix(gr, sample, upstream, downstream, diff_length=F, approx_nu=NULL)
 	  reads.df <- data.frame(tss_distance=(-1 * upstream):(downstream - 1),
-	                        reads=colMeans(reads), 
+	                        reads=colMeans(reads),
 	                        sample_name=sample_name)
 	  if(!is.na(smooth)) reads.df$reads <- as.numeric(runmean(Rle(reads.df$reads), k=smooth, endrule="constant"))
-		  
+
 	}else{
 	 reads <- standard_metapeak_matrix(gr, sample, dl= T, an=approx_n)
   	 reads.df <- data.frame(tss_distance=1:ncol(reads),
-                        reads=colMeans(reads), 
+                        reads=colMeans(reads),
                         sample_name=sample_name)
 	}
-  
-  reads.df  
+
+  reads.df
 }
 
 
 exo_metapeak <- function(gr, sample, upstream=100, downstream=100, sample_name=NA, smooth=NA) {
   message("exo metapeak: ", sample_name)
   reads.list <- exo_metapeak_matrix(gr, sample, upstream, downstream)
-  
+
   reads.p <- reads.list$pos
   reads.n <- reads.list$neg
-  
+
   df.p <- data.frame(tss_distance=(-1 * upstream):(downstream - 1),
-                     reads=colMeans(reads.p), 
+                     reads=colMeans(reads.p),
                      strand="+")
 
   df.n <- data.frame(tss_distance=(-1 * upstream):(downstream - 1),
-                     reads=colMeans(reads.n) *(-1), 
+                     reads=colMeans(reads.n) *(-1),
                      strand="-")
 
   if(!is.na(smooth)) {
@@ -142,12 +142,12 @@ get_exo_metapeak <- function(gr, sample, upstream=100, downstream=101, smooth=NA
     }
     sample_path1 <- load_bigwig(sample, sample_format = "separate")[[1]]
     sample_path2 <- load_bigwig(sample, sample_format = "separate")[[2]]
-    
+
     gr.ex <- resize(gr, upstream, "end") %>% resize(., downstream + upstream, "start")
-    
+
     cov1 <- list(pos=import.bw(sample_path1$pos, which=gr.ex, as="RleList"), neg = import.bw(sample_path1$neg, which=gr.ex, as="RleList"))
     cov2 <- list(pos=import.bw(sample_path2$pos, which=gr.ex, as="RleList"), neg = import.bw(sample_path2$neg, which=gr.ex, as="RleList"))
-    
+
     cov <- list(pos = cov1$pos + cov2$pos, neg = cov1$neg + cov2$neg)
     metapeak <- exo_metapeak(gr, cov, upstream=upstream, downstream=downstream, sample_name =sample_name, smooth=smooth)
   }
@@ -172,14 +172,14 @@ get_exo_matrix <- function(gr, sample, upstream=100, downstream=101, sample_form
   if(sample_format == "separate"){
     sample_path1 <- load_bigwig(sample, sample_format = "separate")[[1]]
     sample_path2 <- load_bigwig(sample, sample_format = "separate")[[2]]
-    
+
     gr.ex <- resize(gr, upstream, "end") %>% resize(., downstream + upstream, "start")
-    
+
     cov1 <- list(pos=import.bw(sample_path1$pos, which=gr.ex, as="RleList"), neg = import.bw(sample_path1$neg, which=gr.ex, as="RleList"))
     cov2 <- list(pos=import.bw(sample_path2$pos, which=gr.ex, as="RleList"), neg = import.bw(sample_path2$neg, which=gr.ex, as="RleList"))
-    
+
     cov <- list(pos = cov1$pos + cov2$pos, neg = cov1$neg + cov2$neg)
-  
+
     exo_matrix <-exo_metapeak_matrix(gr, cov,upstream=upstream, downstream=downstream)
   }
   if(sample_format == "data"){
